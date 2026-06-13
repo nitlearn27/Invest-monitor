@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "invest-monitor",
+  "compatibility_date": "2026-06-01",
+  // Static-only deploy: serve the Vite build (./dist) as assets, with SPA
+  // fallback so any path returns index.html. No Worker script needed.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

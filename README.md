@@ -69,8 +69,39 @@ npm run dev
   `src/lib/monthly.js` to change or remove it.
 - The API key only reads public files; keep it Drive-API + referrer restricted.
 
+## Deploy to Cloudflare
+
+It's a static SPA, so it deploys as static assets (config in `wrangler.jsonc`).
+
+> ⚠️ **Privacy:** the app embeds the Drive folder id + API key in the browser
+> bundle and reads from a public Drive folder, so **anyone who opens the deployed
+> URL can see your portfolio**. Put the site behind **Cloudflare Access** (Zero
+> Trust → restrict to your email) if you don't want it public.
+
+**Option A — Wrangler CLI (Workers static assets):**
+
+```bash
+npx wrangler login          # one-time
+npm run deploy              # builds with your local .env, then deploys
+```
+
+Your `.env` (`VITE_GDRIVE_FOLDER_ID`, `VITE_GDRIVE_API_KEY`) is read at **build**
+time and baked into the bundle. Deploys to `invest-monitor.<subdomain>.workers.dev`.
+
+**Option B — Cloudflare Pages + GitHub (auto-deploy on push):**
+
+1. Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git → pick the repo.
+2. Build command `npm run build`, output directory `dist`.
+3. Add environment variables `VITE_GDRIVE_FOLDER_ID` and `VITE_GDRIVE_API_KEY`
+   (Production **and** Preview). Deploys to `invest-monitor.pages.dev`.
+
+**After deploying (required):** add the deployed origin (e.g.
+`https://invest-monitor.pages.dev/*` or the `*.workers.dev` URL) to your Google
+API key's **HTTP referrer** allowlist, or Drive fetches will return 403.
+
 ## Scripts
 
 - `npm run dev` — dev server
 - `npm run build` — production build
 - `npm run lint` — lint
+- `npm run deploy` — build + deploy to Cloudflare (Workers static assets)
