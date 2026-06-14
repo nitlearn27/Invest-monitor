@@ -1,7 +1,8 @@
 // Monthly investment view: per-month total + MF vs Stocks&ETF breakup (latest
-// first, scrollable) on the left; on the right a per-month MF cap donut with the
-// selected month's transaction details stacked beneath it. Clicking a month
-// updates the right column — no page scroll needed.
+// first) on the left — only the 3 most recent months show up front, the rest
+// fold behind a "See more" toggle that makes the list scrollable. On the right a
+// per-month MF cap donut with the selected month's transaction details stacked
+// beneath it. Clicking a month updates the right column — no page scroll needed.
 import { useState } from 'react'
 import AllocationDonut from './AllocationDonut.jsx'
 import { EmptyState } from './StateViews.jsx'
@@ -30,6 +31,12 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
   const displayMonths = [...months].reverse() // latest first
   const cap = mfCapBreakdown(mfTxns)
 
+  // Show the 3 most recent months up front; the rest fold behind "See more"
+  // (and the list becomes scrollable). Keeps the mobile view short.
+  const [showAllMonths, setShowAllMonths] = useState(false)
+  const visibleMonths = showAllMonths ? displayMonths : displayMonths.slice(0, 3)
+  const hiddenCount = displayMonths.length - visibleMonths.length
+
   const equity = equityBreakdown(transactions)
 
   // Month picker for the donuts + detail; default to the latest month.
@@ -49,8 +56,6 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
       ))}
     </select>
   )
-
-  const maxMonth = Math.max(...months.map((m) => m.total), 1)
 
   // Top strip tracks the current calendar year (Jan–Dec).
   const year = new Date().getFullYear()
@@ -108,16 +113,11 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
               ))}
             </div>
           </div>
-          <p className="muted" style={{ fontSize: 12.5, margin: '0 0 12px' }}>
-            Click a month to see its breakup and transactions →. Includes an assumed ₹10,000/month SIP in
-            Edelweiss Mid Cap Fund (4th).
-          </p>
-
           {displayMonths.length === 0 ? (
             <EmptyState title="No dated transactions to chart" />
           ) : (
             <div className="month-list">
-              {displayMonths.map((m) => (
+              {visibleMonths.map((m) => (
                 <button
                   key={m.month}
                   className={`month-row ${selectedMonth === m.month ? 'active' : ''}`}
@@ -125,35 +125,40 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
                   type="button"
                 >
                   <div className="month-row__top">
-                    <span className="month-row__name">
-                      {m.label} <span className="muted">· {m.count} txns</span>
-                    </span>
+                    <span className="month-row__name">{m.label}</span>
                     <span className="month-row__total">{formatINR(m.total)}</span>
                   </div>
-                  <div className="bar bar--stack">
-                    {SERIES.map((s) =>
-                      m[s.key] > 0 ? (
+                  <div
+                    className="splitbar"
+                    role="img"
+                    aria-label={`MF ${formatINR(m.mf)}, Stocks & ETFs ${formatINR(m.equity)}`}
+                  >
+                    {SERIES.map((s) => {
+                      const v = m[s.key]
+                      if (v <= 0) return null
+                      const pct = Math.round((v / m.total) * 100)
+                      return (
                         <div
                           key={s.key}
-                          className="bar__fill"
-                          style={{ width: `${(m[s.key] / maxMonth) * 100}%`, background: s.color }}
-                        />
-                      ) : null,
-                    )}
-                  </div>
-                  <div className="month-row__break">
-                    <span>
-                      <span className="legend__dot" style={{ background: ASSET_COLORS.mf }} /> MF{' '}
-                      {m.mf ? formatINR(m.mf) : '—'}
-                    </span>
-                    <span>
-                      <span className="legend__dot" style={{ background: ASSET_COLORS.stock }} /> Stocks &amp; ETFs{' '}
-                      {m.equity ? formatINR(m.equity) : '—'}
-                    </span>
+                          className="splitbar__seg"
+                          style={{ flexGrow: v, background: s.color }}
+                          title={`${s.label}: ${formatINR(v)} · ${pct}%`}
+                        >
+                          <span className="splitbar__amt">{formatINRCompact(v)}</span>
+                          <span className="splitbar__pct">{pct}%</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </button>
               ))}
             </div>
+          )}
+
+          {displayMonths.length > 3 && (
+            <button type="button" className="month-more" onClick={() => setShowAllMonths((v) => !v)}>
+              {showAllMonths ? 'Show less' : `See ${hiddenCount} more month${hiddenCount > 1 ? 's' : ''}`}
+            </button>
           )}
         </div>
 
