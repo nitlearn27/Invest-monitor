@@ -70,20 +70,22 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <AppBar source={source} lastUpdated={lastUpdated} onRefresh={refresh} busy={status === 'loading'}>
-        {status === 'ready' && dataset && (
-          <nav className="tabs" aria-label="Sections">
-            {TABS.map((t) => (
-              <button key={t.key} className={tab === t.key ? 'tabs__btn active' : 'tabs__btn'} onClick={() => setTab(t.key)}>
-                {t.label}
-                {t.key === 'transactions' && dataset.transactions.length > 0 && (
-                  <span className="tabs__count">{dataset.transactions.length}</span>
-                )}
-              </button>
-            ))}
-          </nav>
-        )}
-      </AppBar>
+      <AppBar
+        source={source}
+        lastUpdated={lastUpdated}
+        onRefresh={refresh}
+        busy={status === 'loading'}
+        tabs={
+          status === 'ready' && dataset
+            ? TABS.map((t) => ({
+                ...t,
+                count: t.key === 'transactions' ? dataset.transactions.length : 0,
+              }))
+            : null
+        }
+        tab={tab}
+        onTabChange={setTab}
+      />
 
       {status === 'loading' && <Loader label="Fetching your reports…" />}
 

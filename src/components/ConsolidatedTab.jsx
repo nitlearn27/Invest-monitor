@@ -1,6 +1,7 @@
 // Consolidated overview across stocks, ETFs and mutual funds.
 import PortfolioCard from './PortfolioCard.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
+import ConsolidatedMobile from './ConsolidatedMobile.jsx'
 import {
   cardSummaries,
   allocationByClass,
@@ -9,15 +10,54 @@ import {
   topHoldings,
 } from '../lib/portfolio.js'
 import { ASSET_TYPES, ASSET_COLORS } from '../config.js'
-import { formatINR, formatINRCompact } from '../lib/format.js'
+import { formatINR, formatINRCompact, formatPct } from '../lib/format.js'
+import { useIsMobile } from '../lib/useIsMobile.js'
+
+// Compact invested + current header shown on the MF / Stocks donut sections.
+function DonutKpi({ stats }) {
+  const { invested, current, pnl, pnlPct, anyCurrent } = stats
+  const pos = pnl != null && pnl >= 0
+  return (
+    <div className="donut-kpi">
+      <span className="donut-kpi__item">
+        <span className="donut-kpi__label">Invested</span>
+        <span className="donut-kpi__val">{formatINR(invested)}</span>
+      </span>
+      <span className="donut-kpi__item">
+        <span className="donut-kpi__label">Current</span>
+        <span className="donut-kpi__val">
+          {anyCurrent ? formatINR(current) : '—'}
+          {pnl != null && (
+            <span className={`donut-kpi__pnl ${pos ? 'pos' : 'neg'}`}>
+              {pos ? '▲' : '▼'} {formatPct(pnlPct)}
+            </span>
+          )}
+        </span>
+      </span>
+    </div>
+  )
+}
 
 export default function ConsolidatedTab({ holdings }) {
+  const isMobile = useIsMobile()
   const cards = cardSummaries(holdings)
   const allocation = allocationByClass(holdings)
   const mfClass = mfClassAllocation(holdings)
   const equityAlloc = equityHoldingsAllocation(holdings)
   const top = topHoldings(holdings, 8)
   const maxTop = Math.max(...top.map((h) => h.invested || 0), 1)
+
+  if (isMobile) {
+    return (
+      <ConsolidatedMobile
+        cards={cards}
+        allocation={allocation}
+        mfClass={mfClass}
+        equityAlloc={equityAlloc}
+        top={top}
+      />
+    )
+  }
 
   return (
     <div className="tab">
@@ -32,7 +72,8 @@ export default function ConsolidatedTab({ holdings }) {
         {mfClass.length > 0 && (
           <AllocationDonut
             segments={mfClass}
-            title="Mutual funds by class"
+            title="Mutual Funds"
+            action={<DonutKpi stats={cards.mf} />}
             centerValue={formatINRCompact(cards.mf.invested)}
             centerLabel="MF"
             legendMax={186}
@@ -42,6 +83,7 @@ export default function ConsolidatedTab({ holdings }) {
           <AllocationDonut
             segments={equityAlloc}
             title="Stocks & ETFs"
+            action={<DonutKpi stats={cards.stocksEtfs} />}
             centerValue={formatINRCompact(cards.stocksEtfs.invested)}
             centerLabel="invested"
             legendMax={186}

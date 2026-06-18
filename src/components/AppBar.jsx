@@ -1,11 +1,13 @@
-// Slim top bar: brand on the left, the tab nav inline (passed as children), and
-// a 3-dots menu on the right holding the data-source badge + Refresh — so the
-// top strip isn't wasted on a big header.
+// Slim top bar: brand on the left, the tab nav (inline on desktop, a ☰ hamburger
+// menu on mobile), and a ⋮ menu on the right holding the data-source badge +
+// Refresh — so the top strip isn't wasted on a big header.
 import { useState } from 'react'
 import { formatDateTime } from '../lib/format.js'
 
-export default function AppBar({ source, lastUpdated, onRefresh, busy, children }) {
+export default function AppBar({ source, lastUpdated, onRefresh, busy, tabs, tab, onTabChange }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
+  const hasTabs = tabs && tabs.length > 0
 
   return (
     <header className="appbar">
@@ -14,7 +16,57 @@ export default function AppBar({ source, lastUpdated, onRefresh, busy, children 
         <h1>Invest Monitor</h1>
       </div>
 
-      {children}
+      {hasTabs && (
+        <>
+          {/* Desktop: inline scrollable tabs (hidden ≤640px via CSS) */}
+          <nav className="tabs" aria-label="Sections">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                className={tab === t.key ? 'tabs__btn active' : 'tabs__btn'}
+                onClick={() => onTabChange(t.key)}
+              >
+                {t.label}
+                {t.count > 0 && <span className="tabs__count">{t.count}</span>}
+              </button>
+            ))}
+          </nav>
+
+          {/* Mobile: ☰ hamburger that opens the section list (shown ≤640px via CSS) */}
+          <div className="appbar__nav-menu">
+            <button
+              className="kebab hamburger"
+              aria-label="Sections"
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen((o) => !o)}
+            >
+              ☰
+            </button>
+            {navOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setNavOpen(false)} />
+                <div className="menu menu--left" role="menu">
+                  {tabs.map((t) => (
+                    <button
+                      key={t.key}
+                      className={`menu__item ${tab === t.key ? 'menu__item--active' : ''}`}
+                      role="menuitemradio"
+                      aria-checked={tab === t.key}
+                      onClick={() => {
+                        setNavOpen(false)
+                        onTabChange(t.key)
+                      }}
+                    >
+                      {t.label}
+                      {t.count > 0 && <span className="tabs__count">{t.count}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="appbar__menu">
         <button
