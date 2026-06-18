@@ -1071,6 +1071,12 @@
   padding: 2px 2px 4px;
   animation: cmob-in 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
+/* Keep each block at its natural height so the panel scrolls instead of
+   shrinking children — without this, a tall section squashes the .shero header
+   (overflow:hidden) and clips the invested value + Current row. */
+.cmob__main > * {
+  flex-shrink: 0;
+}
 @keyframes cmob-in {
   from {
     opacity: 0;
