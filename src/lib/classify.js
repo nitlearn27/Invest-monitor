@@ -156,6 +156,49 @@ function parseMyMfs(sheet) {
   return holdings.length ? { holdings } : null
 }
 
+// --- "My MF Coin" page (Zerodha Coin current MF holdings, copy-pasted into a
+// Google Sheet). Unlike INDmoney's single-cell rows, Coin lays each fund out as
+// a fixed block of single-column cells:
+//   <Fund name>
+//   Growth<Equity|Others|…><Sub-category>   e.g. "GrowthEquityMid Cap"
+//   <avg NAV>        (number)
+//   <current NAV>    (number)
+//   <invested>       "4,39,977.88"
+//   <current value>  "5,13,048.48"
+//   <P&L><P&L%>      "73,070.5916.61"  (concatenated — we recompute instead)
+//   <day P&L><day%>  "3,705.980.73"
+// Detected by the category row; P&L is recomputed as current − invested.
+const COIN_CAT_RE = /^(growth|idcw|dividend|payout|reinvest)[a-z ]*?(equity|others|debt|hybrid|liquid)/i
+
+function parseCoinMfs(sheet) {
+  const rows = sheet.rows
+  const cell = (i) => (rows[i] && rows[i][0] != null ? String(rows[i][0]).trim() : '')
+  const holdings = []
+  for (let i = 1; i < rows.length; i++) {
+    if (!COIN_CAT_RE.test(cell(i))) continue // category row marks a fund block
+    const name = cell(i - 1)
+    if (!name) continue
+    const invested = parseMoney(cell(i + 3))
+    const current = parseMoney(cell(i + 4))
+    if (invested == null && current == null) continue
+    const pnl = invested != null && current != null ? current - invested : null
+    holdings.push({
+      name,
+      isin: null,
+      type: 'mf',
+      qty: null,
+      avgPrice: toNum(cell(i + 1)),
+      invested,
+      current,
+      pnl,
+      pnlPct: pnl != null && invested ? (pnl / invested) * 100 : null,
+      folio: null,
+      source: 'My MF Coin',
+    })
+  }
+  return holdings.length ? { holdings } : null
+}
+
 // --- "My Stocks" page (current stocks + ETFs). A real table with header
 // "Stock Name | Market Price | Invested (Qty/Price) | Current value | Total PnL".
 function parseMyStocks(sheet) {
@@ -262,6 +305,12 @@ export function buildDataset(parsedFiles) {
       if (myMfs) {
         holdings.push(...myMfs.holdings)
         recognized.push({ file: file.fileName, sheet: sheet.name, type: 'my-mfs' })
+        continue
+      }
+      const coinMfs = parseCoinMfs(sheet)
+      if (coinMfs) {
+        holdings.push(...coinMfs.holdings)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'coin-mfs' })
         continue
       }
       const stockTxn = parseStockTransactions(sheet)
