@@ -1097,6 +1097,7 @@
 /* bottom switcher: a horizontal, scroll-snapping row of section chips */
 .cmob__rail {
   flex: 0 0 auto;
+  padding: 7px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
@@ -1123,44 +1124,51 @@
 }
 .cmob__chip {
   scroll-snap-align: center;
-  min-width: 72px;
-  min-height: 54px;
-  padding: 0 12px;
+  min-width: 64px;
+  min-height: 50px;
+  padding: 8px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  border-radius: 15px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-dim);
-  transition: 0.16s ease;
+  gap: 7px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-mute);
+  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
+/* inactive: a quiet colour dot; active: a glowing bar indicator */
 .cmob__chip-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
   background: var(--chip-c, var(--accent));
-  opacity: 0.65;
-  transition: 0.16s ease;
+  opacity: 0.55;
+  transition: 0.18s ease;
 }
 .cmob__chip-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
 }
 .cmob__chip.active {
   color: #fff;
-  border-color: var(--chip-c, var(--accent));
-  background: color-mix(in srgb, var(--chip-c, var(--accent)) 18%, var(--surface));
-  box-shadow: 0 0 0 1px var(--chip-c, var(--accent)),
-    0 6px 16px color-mix(in srgb, var(--chip-c, var(--accent)) 30%, transparent);
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--chip-c, var(--accent)) 38%, var(--surface)),
+    color-mix(in srgb, var(--chip-c, var(--accent)) 9%, var(--surface))
+  );
+  border-color: color-mix(in srgb, var(--chip-c, var(--accent)) 50%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--chip-c, var(--accent)) 26%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  transform: scale(1.06);
 }
 .cmob__chip.active .cmob__chip-dot {
   opacity: 1;
-  transform: scale(1.15);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--chip-c, var(--accent)) 75%, transparent);
+  width: 18px;
+  height: 4px;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--chip-c, var(--accent)) 85%, transparent);
 }
 .cmob__chip:focus-visible {
   outline: 2px solid var(--chip-c, var(--accent));
@@ -1317,18 +1325,27 @@
   .state {
     width: min(1180px, 94vw);
   }
+  /* mobile bar: ☰ hamburger left · app icon centered · ⋮ menu right */
   .appbar {
     gap: 10px;
+    position: relative;
   }
   .appbar h1 {
     display: none;
   }
-  /* swap the inline scrollable tabs for the ☰ hamburger menu */
   .appbar .tabs {
     display: none;
   }
   .appbar__nav-menu {
     display: block;
+    order: -1;
+    margin: 0;
+  }
+  .appbar__brand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
   }
   .app main.container {
     margin-top: 8px;

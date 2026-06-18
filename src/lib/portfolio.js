@@ -54,6 +54,7 @@ export function allocationByClass(holdings) {
       }
     })
     .filter((s) => s.value > 0)
+    .sort((a, b) => b.value - a.value) // largest class first (MF → … → Stocks)
 }
 
 export function byType(holdings, type) {

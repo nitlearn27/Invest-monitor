@@ -39,18 +39,10 @@ function SectionHero({ label, stats }) {
   )
 }
 
-function SectionHeader({ label }) {
-  return (
-    <p className="shero__eyebrow shero__eyebrow--solo">
-      <span className="shero__dot" />
-      {label}
-    </p>
-  )
-}
-
 function TopHoldingsBars({ top, maxTop }) {
   return (
     <div className="card">
+      <h3 className="card__title">Top holdings</h3>
       <div className="bars">
         {top.map((h) => (
           <div className="bar-row" key={h.isin || h.name}>
@@ -178,6 +170,7 @@ export default function ConsolidatedMobile({ cards, allocation, mfClass, equityA
             <PortfolioCard title="Mutual Funds" color={ASSET_COLORS.mf} stats={cards.mf} />
             <PortfolioCard title="Stocks & ETFs" color={ASSET_COLORS.stock} stats={cards.stocksEtfs} />
           </div>
+          <AllocationDonut segments={allocation} title="Allocation by class" />
         </>
       ),
     },
@@ -216,26 +209,10 @@ export default function ConsolidatedMobile({ cards, allocation, mfClass, equityA
       ),
     },
     {
-      key: 'mix',
-      short: 'Mix',
-      color: ASSET_COLORS.etf,
-      render: () => (
-        <>
-          <SectionHeader label="Allocation by class" />
-          <AllocationDonut segments={allocation} />
-        </>
-      ),
-    },
-    {
       key: 'top',
       short: 'Top',
       color: '#ffbf63',
-      render: () => (
-        <>
-          <SectionHeader label="Top holdings" />
-          <TopHoldingsBars top={top} maxTop={maxTop} />
-        </>
-      ),
+      render: () => <TopHoldingsBars top={top} maxTop={maxTop} />,
     },
   ]
 
