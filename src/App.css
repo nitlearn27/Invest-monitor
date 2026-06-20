@@ -39,6 +39,39 @@
   font-size: 16px;
   white-space: nowrap;
 }
+/* Cursive colorful wordmark — only shown on mobile (see ≤640px block) */
+.appbar__wordmark {
+  display: none;
+  font-family: 'Dancing Script', cursive;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+  padding-bottom: 4px;
+  background: linear-gradient(
+    100deg,
+    #9b8cff 0%,
+    #4f9cff 32%,
+    #ef5a98 64%,
+    #f5a524 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(91, 140, 255, 0.35));
+  animation: wordmark-shimmer 6s ease-in-out infinite alternate;
+}
+.appbar__wordmark-cap {
+  font-size: 1.3em;
+  text-transform: uppercase;
+}
+@keyframes wordmark-shimmer {
+  from { background-position: 0% center; }
+  to { background-position: 100% center; }
+}
 /* tab nav lives inline in the bar */
 .appbar .tabs {
   margin: 0;
@@ -1506,6 +1539,9 @@
   .cmob__chip-dot {
     transition: none;
   }
+  .appbar__wordmark {
+    animation: none;
+  }
 }
 
 /* ---------- Responsive ---------- */
@@ -1537,6 +1573,13 @@
   }
   .appbar h1 {
     display: none;
+  }
+  /* swap the ◆ icon for the cursive "Arti's Assets" wordmark on mobile */
+  .appbar__logo {
+    display: none;
+  }
+  .appbar__wordmark {
+    display: block;
   }
   .appbar .tabs {
     display: none;

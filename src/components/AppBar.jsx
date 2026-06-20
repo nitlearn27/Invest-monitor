@@ -25,6 +25,11 @@ export default function AppBar({
       <div className="appbar__brand">
         <span className="appbar__logo">◆</span>
         <h1>Invest Monitor</h1>
+        {/* Mobile-only cursive wordmark, shown centered in place of the icon */}
+        <span className="appbar__wordmark" aria-label="Arti's Assets">
+          <span className="appbar__wordmark-cap">A</span>rti&rsquo;s{' '}
+          <span className="appbar__wordmark-cap">A</span>ssets
+        </span>
       </div>
 
       {hasTabs && (
