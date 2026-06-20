@@ -240,6 +240,21 @@ function parseAxisMfs(sheet) {
   return holdings.length ? { holdings } : null
 }
 
+// The Groww sheet lists holdings by "Company": sometimes that's already the NSE
+// ticker (e.g. NIFTYBEES), sometimes a descriptive ETF name with no ticker. We
+// derive a symbol so live prices can be fetched: use the name as-is when it looks
+// like a ticker, else map known descriptive names to their NSE ticker.
+const GROWW_NAME_TO_SYMBOL = {
+  'icici prud gold etf': 'GOLDIETF',
+  'mirae asset nyse fang+ etf': 'MAFANG',
+}
+const TICKER_RE = /^[A-Z0-9&-]{2,}$/
+function growwSymbol(name) {
+  const key = name.toLowerCase().trim()
+  if (GROWW_NAME_TO_SYMBOL[key]) return GROWW_NAME_TO_SYMBOL[key]
+  return TICKER_RE.test(name.trim()) ? name.trim() : null
+}
+
 // --- "Stocks Groww" page (stocks + ETFs held on Groww, copy-pasted into a Google
 // Sheet). A real table with header
 // "Company | Shares | Avg. Price | Market Price | Returns (Amt) | Returns (%) |
@@ -267,11 +282,12 @@ function parseGrowwStocks(sheet) {
     const current = parseMoney(row[c.current])
     if (invested == null && current == null) continue
     const pnl = invested != null && current != null ? current - invested : null
+    const symbol = growwSymbol(name)
     holdings.push({
       name,
       isin: null,
-      symbol: null,
-      type: classifyEquity(name, null),
+      symbol,
+      type: classifyEquity(name, symbol),
       qty: toNum(row[c.qty]),
       avgPrice: parseMoney(row[c.avg]),
       invested,

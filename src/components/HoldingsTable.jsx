@@ -2,7 +2,7 @@
 //   { key, label, align, render(row), sortValue(row), className }
 import { useMemo, useState } from 'react'
 
-export default function HoldingsTable({ columns, rows, initialSort, footer }) {
+export default function HoldingsTable({ columns, rows, initialSort, footer, rowClassName, rowStyle }) {
   const [sort, setSort] = useState(initialSort || { key: null, dir: 'desc' })
 
   const sorted = useMemo(() => {
@@ -48,7 +48,11 @@ export default function HoldingsTable({ columns, rows, initialSort, footer }) {
         </thead>
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={row.isin || row.key || i}>
+            <tr
+              key={row.isin || row.key || i}
+              className={rowClassName ? rowClassName(row) : undefined}
+              style={rowStyle ? rowStyle(row) : undefined}
+            >
               {columns.map((col) => (
                 <td key={col.key} className={`${col.align === 'right' ? 'ta-r' : ''} ${col.className || ''}`}>
                   {col.render ? col.render(row) : row[col.key]}

@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "invest-monitor-price-proxy",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-06-18",
+  "observability": {
+    "enabled": true
+  }
+}

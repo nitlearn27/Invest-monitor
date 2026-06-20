@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PortfolioCard from './PortfolioCard.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
+import SourceLegend from './SourceLegend.jsx'
+import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import { ASSET_TYPES, ASSET_COLORS } from '../config.js'
 import { formatINR, formatINRCompact, formatPct } from '../lib/format.js'
 
@@ -42,10 +44,17 @@ function SectionHero({ label, stats }) {
 function TopHoldingsBars({ top, maxTop }) {
   return (
     <div className="card">
-      <h3 className="card__title">Top holdings</h3>
+      <div className="card__title-row">
+        <h3 className="card__title">Top holdings</h3>
+        <SourceLegend sources={top.map((h) => h.source)} />
+      </div>
       <div className="bars">
         {top.map((h) => (
-          <div className="bar-row" key={h.isin || h.name}>
+          <div
+            className={`bar-row ${sourceRowClassName(h) || ''}`}
+            style={sourceRowStyle(h)}
+            key={h.isin || h.name}
+          >
             <div className="bar-row__head">
               <span className="cell-name">
                 {h.name}

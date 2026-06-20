@@ -4,7 +4,18 @@
 import { useState } from 'react'
 import { formatDateTime } from '../lib/format.js'
 
-export default function AppBar({ source, lastUpdated, onRefresh, busy, tabs, tab, onTabChange }) {
+export default function AppBar({
+  source,
+  lastUpdated,
+  onRefresh,
+  busy,
+  onRefreshPrices,
+  pricesBusy,
+  pricesAt,
+  tabs,
+  tab,
+  onTabChange,
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
   const hasTabs = tabs && tabs.length > 0
@@ -93,9 +104,22 @@ export default function AppBar({ source, lastUpdated, onRefresh, busy, tabs, tab
                   {busy ? 'Refreshing…' : '↻ Refresh data'}
                 </button>
               )}
+              {onRefreshPrices && (
+                <button
+                  className="menu__item"
+                  disabled={pricesBusy}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onRefreshPrices()
+                  }}
+                >
+                  {pricesBusy ? 'Refreshing prices…' : '↻ Refresh prices'}
+                </button>
+              )}
               <div className="menu__info">
                 {source && <span className={`source-badge source-badge--${source.kind}`}>{source.label}</span>}
                 {lastUpdated && <span className="muted">Updated {formatDateTime(lastUpdated)}</span>}
+                {pricesAt && <span className="muted">Prices {formatDateTime(pricesAt)}</span>}
               </div>
             </div>
           </>

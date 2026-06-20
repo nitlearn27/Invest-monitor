@@ -1,6 +1,10 @@
 // Generic per-asset tab (Stocks / ETFs / Mutual Funds), driven by `type`.
+import { useState } from 'react'
 import HoldingsTable from './HoldingsTable.jsx'
+import SourceLegend from './SourceLegend.jsx'
+import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import { EmptyState } from './StateViews.jsx'
+import { platformKeyOf } from '../config.js'
 import { formatINR, formatNumber, formatPct } from '../lib/format.js'
 
 const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0)
@@ -11,10 +15,15 @@ function pnlClass(v) {
 }
 
 export default function AssetTab({ type, label, holdings }) {
-  const rows = holdings.filter((h) => h.type === type)
-  if (rows.length === 0) {
+  // Optional filter to a single broker platform (tap a legend chip). Resets per
+  // tab since each tab mounts its own AssetTab.
+  const [activeSource, setActiveSource] = useState(null)
+
+  const allRows = holdings.filter((h) => h.type === type)
+  if (allRows.length === 0) {
     return <EmptyState title={`No ${label.toLowerCase()} found`}>Refresh to pull the matching sheet.</EmptyState>
   }
+  const rows = activeSource ? allRows.filter((h) => platformKeyOf(h.source) === activeSource) : allRows
 
   const isMF = type === 'mf'
   const invested = sum(rows, (h) => h.invested)
@@ -49,6 +58,12 @@ export default function AssetTab({ type, label, holdings }) {
         { key: 'qty', label: 'Qty', align: 'right', render: (r) => formatNumber(r.qty) },
         { key: 'avgPrice', label: 'Avg price', align: 'right', render: (r) => formatINR(r.avgPrice, { paise: true }) },
         { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
+        {
+          key: 'marketPrice',
+          label: 'Market price',
+          align: 'right',
+          render: (r) => (r.marketPrice != null ? formatINR(r.marketPrice, { paise: true }) : '—'),
+        },
         ...pnlCols,
       ]
 
@@ -75,6 +90,7 @@ export default function AssetTab({ type, label, holdings }) {
           <td className="ta-r" />
           <td className="ta-r" />
           <td className="ta-r">{formatINR(invested)}</td>
+          <td className="ta-r" />
           {totalPnlCells}
         </>
       )}
@@ -104,7 +120,22 @@ export default function AssetTab({ type, label, holdings }) {
         </div>
       </div>
 
-      <HoldingsTable columns={columns} rows={rows} initialSort={{ key: 'invested', dir: 'desc' }} footer={footer} />
+      <div className="src-legend-row">
+        <SourceLegend
+          sources={allRows.map((r) => r.source)}
+          active={activeSource}
+          onSelect={setActiveSource}
+        />
+      </div>
+
+      <HoldingsTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ key: 'invested', dir: 'desc' }}
+        footer={footer}
+        rowClassName={sourceRowClassName}
+        rowStyle={sourceRowStyle}
+      />
     </div>
   )
 }

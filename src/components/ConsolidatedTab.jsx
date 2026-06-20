@@ -2,6 +2,8 @@
 import PortfolioCard from './PortfolioCard.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
 import ConsolidatedMobile from './ConsolidatedMobile.jsx'
+import SourceLegend from './SourceLegend.jsx'
+import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import {
   cardSummaries,
   allocationByClass,
@@ -116,10 +118,17 @@ export default function ConsolidatedTab({ holdings }) {
       </div>
 
       <div className="card">
-        <h3 className="card__title">Top holdings</h3>
+        <div className="card__title-row">
+          <h3 className="card__title">Top holdings</h3>
+          <SourceLegend sources={top.map((h) => h.source)} />
+        </div>
         <div className="bars">
           {top.map((h) => (
-            <div className="bar-row" key={h.isin || h.name}>
+            <div
+              className={`bar-row ${sourceRowClassName(h) || ''}`}
+              style={sourceRowStyle(h)}
+              key={h.isin || h.name}
+            >
               <div className="bar-row__head">
                 <span className="cell-name">
                   {h.name}

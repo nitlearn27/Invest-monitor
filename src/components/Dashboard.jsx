@@ -1,5 +1,5 @@
 // Root dashboard: loads data from Google Drive, manages tabs.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppBar from './AppBar.jsx'
 import ConsolidatedTab from './ConsolidatedTab.jsx'
 import MonthlyTab from './MonthlyTab.jsx'
@@ -8,10 +8,11 @@ import TransactionsTab from './TransactionsTab.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
 import ProjectionTab from './ProjectionTab.jsx'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
-import { driveConfigured } from '../config.js'
+import { driveConfigured, pricesConfigured } from '../config.js'
 import { fetchDriveWorkbooks } from '../lib/drive.js'
 import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
+import { fetchQuotes, enrichHoldings } from '../lib/quotes.js'
 
 const TABS = [
   { key: 'consolidated', label: 'Consolidated' },
@@ -33,6 +34,11 @@ export default function Dashboard() {
   const [source, setSource] = useState(() => (boot?.dataset ? { kind: 'cache', label: '⚡ Cached' } : null))
   const [lastUpdated, setLastUpdated] = useState(() => (boot?.cachedAt ? new Date(boot.cachedAt) : null))
   const [tab, setTab] = useState('consolidated')
+  // Live market prices for stocks/ETFs (Map<symbol, price>); the sheet's stale
+  // "Current value" is used as a fallback for anything not resolved here.
+  const [priceMap, setPriceMap] = useState(() => new Map())
+  const [pricesAt, setPricesAt] = useState(null)
+  const [pricesBusy, setPricesBusy] = useState(false)
 
   const loadFromDrive = useCallback(async () => {
     setStatus('loading')
@@ -70,8 +76,50 @@ export default function Dashboard() {
     }
   }, [boot, loadFromDrive])
 
+  // Fetch live prices for the stock/ETF symbols in the current dataset. `force`
+  // bypasses the per-symbol TTL cache (used by the manual Refresh prices button).
+  const loadPrices = useCallback(
+    async (force) => {
+      if (!pricesConfigured() || !dataset) return
+      const symbols = dataset.holdings
+        .filter((h) => (h.type === 'stock' || h.type === 'etf') && h.symbol)
+        .map((h) => h.symbol)
+      if (symbols.length === 0) return
+      setPricesBusy(true)
+      try {
+        const map = await fetchQuotes(symbols, { force })
+        if (map.size > 0) {
+          setPriceMap(map)
+          setPricesAt(new Date())
+        }
+      } finally {
+        setPricesBusy(false)
+      }
+    },
+    [dataset],
+  )
+
+  // Refresh prices whenever the dataset changes (load from Drive or boot cache).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!cancelled) await loadPrices(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadPrices])
+
+  // Holdings with live prices applied; everything downstream (cards, allocation,
+  // tabs) reads these so the UI reflects live values without further changes.
+  const view = useMemo(
+    () => (dataset ? { ...dataset, holdings: enrichHoldings(dataset.holdings, priceMap) } : null),
+    [dataset, priceMap],
+  )
+
   // Refresh always re-pulls from Drive (when configured).
   const refresh = driveConfigured() ? loadFromDrive : null
+  const refreshPrices = pricesConfigured() ? () => loadPrices(true) : null
 
   return (
     <div className="app">
@@ -80,11 +128,14 @@ export default function Dashboard() {
         lastUpdated={lastUpdated}
         onRefresh={refresh}
         busy={status === 'loading'}
+        onRefreshPrices={refreshPrices}
+        pricesBusy={pricesBusy}
+        pricesAt={pricesAt}
         tabs={
-          status === 'ready' && dataset
+          status === 'ready' && view
             ? TABS.map((t) => ({
                 ...t,
-                count: t.key === 'transactions' ? dataset.transactions.length : 0,
+                count: t.key === 'transactions' ? view.transactions.length : 0,
               }))
             : null
         }
@@ -110,24 +161,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      {status === 'ready' && dataset && (
+      {status === 'ready' && view && (
         <>
           <main className="container">
             {tab === 'consolidated' && (
-              <ConsolidatedTab holdings={dataset.holdings} transactions={dataset.transactions} />
+              <ConsolidatedTab holdings={view.holdings} transactions={view.transactions} />
             )}
             {tab === 'monthly' && (
-              <MonthlyTab transactions={dataset.transactions} mfTransactions={dataset.mfTransactions} />
+              <MonthlyTab transactions={view.transactions} mfTransactions={view.mfTransactions} />
             )}
-            {tab === 'stock' && <AssetTab type="stock" label="Stocks" holdings={dataset.holdings} />}
-            {tab === 'mf' && <AssetTab type="mf" label="Mutual Funds" holdings={dataset.holdings} />}
-            {tab === 'etf' && <AssetTab type="etf" label="ETFs" holdings={dataset.holdings} />}
+            {tab === 'stock' && <AssetTab type="stock" label="Stocks" holdings={view.holdings} />}
+            {tab === 'mf' && <AssetTab type="mf" label="Mutual Funds" holdings={view.holdings} />}
+            {tab === 'etf' && <AssetTab type="etf" label="ETFs" holdings={view.holdings} />}
             {tab === 'transactions' && (
-              <TransactionsTab holdings={dataset.holdings} transactions={dataset.transactions} />
+              <TransactionsTab holdings={view.holdings} transactions={view.transactions} />
             )}
-            {tab === 'analysis' && <AnalysisTab html={dataset.analysisHtml} />}
+            {tab === 'analysis' && <AnalysisTab html={view.analysisHtml} />}
             {tab === 'projection' && (
-              <ProjectionTab rows={dataset.projection || []} holdings={dataset.holdings} />
+              <ProjectionTab rows={view.projection || []} holdings={view.holdings} />
             )}
           </main>
         </>
