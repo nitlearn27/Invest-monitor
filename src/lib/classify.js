@@ -199,6 +199,134 @@ function parseCoinMfs(sheet) {
   return holdings.length ? { holdings } : null
 }
 
+// --- "Axis Bank MF" page (regular-plan MFs bought via Axis Bank, copy-pasted
+// into a Google Sheet). A simple table with header
+// "Fund Name | (blank) | Invested Amount | Current Amount". Values are compact
+// (e.g. "1.5 L", "75K"); there's no Gain/Loss column, so P&L is derived.
+function parseAxisMfs(sheet) {
+  const header = findHeader(sheet.rows, ['fund name', 'invested amount', 'current amount'])
+  if (!header) return null
+  const c = {
+    name: col(header.colMap, 'fund name'),
+    invested: col(header.colMap, 'invested amount', 'invested'),
+    current: col(header.colMap, 'current amount', 'current'),
+  }
+  const holdings = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    if (!name) {
+      if (holdings.length) break // table ended
+      continue
+    }
+    const invested = parseMoney(row[c.invested])
+    const current = parseMoney(row[c.current])
+    if (invested == null && current == null) continue
+    const pnl = invested != null && current != null ? current - invested : null
+    holdings.push({
+      name,
+      isin: null,
+      type: 'mf',
+      qty: null,
+      avgPrice: null,
+      invested,
+      current,
+      pnl,
+      pnlPct: pnl != null && invested ? (pnl / invested) * 100 : null,
+      folio: null,
+      source: 'Axis Bank MF',
+    })
+  }
+  return holdings.length ? { holdings } : null
+}
+
+// --- "Stocks Groww" page (stocks + ETFs held on Groww, copy-pasted into a Google
+// Sheet). A real table with header
+// "Company | Shares | Avg. Price | Market Price | Returns (Amt) | Returns (%) |
+//  Current Value | Invested Value". Returns (Amt) is often "#ERROR!", so P&L is
+// derived from current − invested. Stock vs ETF via classifyEquity (no ISIN).
+function parseGrowwStocks(sheet) {
+  const header = findHeader(sheet.rows, ['company', 'shares', 'invested value'])
+  if (!header) return null
+  const c = {
+    name: col(header.colMap, 'company'),
+    qty: col(header.colMap, 'shares'),
+    avg: col(header.colMap, 'avg'),
+    invested: col(header.colMap, 'invested value', 'invested'),
+    current: col(header.colMap, 'current value', 'current'),
+  }
+  const holdings = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    if (!name) {
+      if (holdings.length) break // table ended
+      continue
+    }
+    const invested = parseMoney(row[c.invested])
+    const current = parseMoney(row[c.current])
+    if (invested == null && current == null) continue
+    const pnl = invested != null && current != null ? current - invested : null
+    holdings.push({
+      name,
+      isin: null,
+      symbol: null,
+      type: classifyEquity(name, null),
+      qty: toNum(row[c.qty]),
+      avgPrice: parseMoney(row[c.avg]),
+      invested,
+      current,
+      pnl,
+      pnlPct: pnl != null && invested ? (pnl / invested) * 100 : null,
+      folio: null,
+      source: 'Stocks Groww',
+    })
+  }
+  return holdings.length ? { holdings } : null
+}
+
+// --- "MF Groww" page (mutual funds held on Groww, copy-pasted into a Google
+// Sheet). A real table with header
+// "Fund Name | XIRR (%) | Day Change (Amt) | Day Change (%) | Returns (Amt) |
+//  Returns (%) | Current Value | Invested Value". P&L is derived from
+// current − invested.
+function parseGrowwMfs(sheet) {
+  const header = findHeader(sheet.rows, ['fund name', 'invested value', 'current value'])
+  if (!header) return null
+  const c = {
+    name: col(header.colMap, 'fund name'),
+    invested: col(header.colMap, 'invested value', 'invested'),
+    current: col(header.colMap, 'current value', 'current'),
+  }
+  const holdings = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    if (!name) {
+      if (holdings.length) break // table ended
+      continue
+    }
+    const invested = parseMoney(row[c.invested])
+    const current = parseMoney(row[c.current])
+    if (invested == null && current == null) continue
+    const pnl = invested != null && current != null ? current - invested : null
+    holdings.push({
+      name,
+      isin: null,
+      type: 'mf',
+      qty: null,
+      avgPrice: null,
+      invested,
+      current,
+      pnl,
+      pnlPct: pnl != null && invested ? (pnl / invested) * 100 : null,
+      folio: null,
+      source: 'MF Groww',
+    })
+  }
+  return holdings.length ? { holdings } : null
+}
+
 // --- "My Stocks" page (current stocks + ETFs). A real table with header
 // "Stock Name | Market Price | Invested (Qty/Price) | Current value | Total PnL".
 function parseMyStocks(sheet) {
@@ -286,11 +414,43 @@ function parseStockTransactions(sheet) {
   return transactions.length ? { transactions } : null
 }
 
+// --- "Projection" page (goal tracking). A table with header
+// "Name | Amount -2025 Dec | 2026-Dec | Current | Shortfall | Sheets". The
+// Sheets column names which holding `source`s feed each goal (Current/Shortfall
+// are computed in projection.js, not read from the sheet).
+function parseProjection(sheet) {
+  const header = findHeader(sheet.rows, ['name', '2026', 'sheets'])
+  if (!header) return null
+  const c = {
+    name: col(header.colMap, 'name'),
+    target2026: col(header.colMap, '2026'),
+    baseline2025: col(header.colMap, '2025'),
+    sheets: col(header.colMap, 'sheets'),
+  }
+  const rows = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    if (!name) {
+      if (rows.length) break // table ended
+      continue
+    }
+    rows.push({
+      name,
+      baseline2025: toNum(row[c.baseline2025]),
+      target2026: toNum(row[c.target2026]),
+      sheetsRaw: row[c.sheets] == null ? '' : String(row[c.sheets]).trim(),
+    })
+  }
+  return rows.length ? { rows } : null
+}
+
 // Classify a list of parsed workbooks and merge into a single dataset.
 export function buildDataset(parsedFiles) {
   const holdings = []
   const transactions = []
   const mfTransactions = []
+  const projection = []
   const recognized = []
 
   for (const file of parsedFiles) {
@@ -311,6 +471,30 @@ export function buildDataset(parsedFiles) {
       if (coinMfs) {
         holdings.push(...coinMfs.holdings)
         recognized.push({ file: file.fileName, sheet: sheet.name, type: 'coin-mfs' })
+        continue
+      }
+      const axisMfs = parseAxisMfs(sheet)
+      if (axisMfs) {
+        holdings.push(...axisMfs.holdings)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'axis-mfs' })
+        continue
+      }
+      const growwStocks = parseGrowwStocks(sheet)
+      if (growwStocks) {
+        holdings.push(...growwStocks.holdings)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'groww-stocks' })
+        continue
+      }
+      const growwMfs = parseGrowwMfs(sheet)
+      if (growwMfs) {
+        holdings.push(...growwMfs.holdings)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'groww-mfs' })
+        continue
+      }
+      const proj = parseProjection(sheet)
+      if (proj) {
+        projection.push(...proj.rows)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'projection' })
         continue
       }
       const stockTxn = parseStockTransactions(sheet)
@@ -335,6 +519,7 @@ export function buildDataset(parsedFiles) {
     holdings,
     transactions,
     mfTransactions,
+    projection,
     meta: { recognized },
   }
 }

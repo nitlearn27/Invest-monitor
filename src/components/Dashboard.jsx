@@ -6,6 +6,7 @@ import MonthlyTab from './MonthlyTab.jsx'
 import AssetTab from './AssetTab.jsx'
 import TransactionsTab from './TransactionsTab.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
+import ProjectionTab from './ProjectionTab.jsx'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
 import { driveConfigured } from '../config.js'
 import { fetchDriveWorkbooks } from '../lib/drive.js'
@@ -20,6 +21,7 @@ const TABS = [
   { key: 'etf', label: 'ETFs' },
   { key: 'transactions', label: 'Transactions' },
   { key: 'analysis', label: 'Portfolio Analysis' },
+  { key: 'projection', label: 'Projection' },
 ]
 
 export default function Dashboard() {
@@ -124,6 +126,9 @@ export default function Dashboard() {
               <TransactionsTab holdings={dataset.holdings} transactions={dataset.transactions} />
             )}
             {tab === 'analysis' && <AnalysisTab html={dataset.analysisHtml} />}
+            {tab === 'projection' && (
+              <ProjectionTab rows={dataset.projection || []} holdings={dataset.holdings} />
+            )}
           </main>
         </>
       )}
