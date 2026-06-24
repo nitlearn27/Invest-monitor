@@ -1,0 +1,15 @@
+{
+  "indmoney": {
+    "motilal nasdaq100": "MON100",
+    "adani ports & special economic zone": "ADANIPORTS",
+    "uti nifty next50": "NEXT50BETA",
+    "dixon technologies (india)": "DIXON",
+    "sbi nifty50": "SETFNIF50",
+    "hindustan copper": "HINDCOPPER",
+    "nippon silver etf": "SILVERBEES"
+  },
+  "groww": {
+    "icici prud gold etf": "GOLDIETF",
+    "mirae asset nyse fang+ etf": "MAFANG"
+  }
+}

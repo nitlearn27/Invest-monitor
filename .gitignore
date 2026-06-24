@@ -28,6 +28,9 @@ resources/*
 # …except the MF name→AMFI scheme-code map, which the app imports at build time
 # (navs.js) and bakes into the bundle. Scheme codes are public AMFI data.
 !resources/mf-schemes.json
+# …and the name→NSE-symbol maps, imported by classify.js at build time and baked
+# into the bundle. NSE tickers are public data.
+!resources/name-symbols.json
 
 # Editor directories and files
 .vscode/*

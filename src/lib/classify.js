@@ -1,6 +1,8 @@
 // Detect INDmoney report types by sheet/header content and normalize rows into
 // a common shape. Files are identified by their columns, NOT their filename.
 
+import NAME_SYMBOLS from '../../resources/name-symbols.json'
+
 const norm = (v) => (v == null ? '' : String(v).trim().toLowerCase())
 
 const toNum = (v) => {
@@ -259,14 +261,10 @@ function parseAxisMfs(sheet) {
 // ticker (e.g. NIFTYBEES), sometimes a descriptive ETF name with no ticker. We
 // derive a symbol so live prices can be fetched: use the name as-is when it looks
 // like a ticker, else map known descriptive names to their NSE ticker.
-const GROWW_NAME_TO_SYMBOL = {
-  'icici prud gold etf': 'GOLDIETF',
-  'mirae asset nyse fang+ etf': 'MAFANG',
-}
 const TICKER_RE = /^[A-Z0-9&-]{2,}$/
 function growwSymbol(name) {
   const key = name.toLowerCase().trim()
-  if (GROWW_NAME_TO_SYMBOL[key]) return GROWW_NAME_TO_SYMBOL[key]
+  if (NAME_SYMBOLS.groww[key]) return NAME_SYMBOLS.groww[key]
   return TICKER_RE.test(name.trim()) ? name.trim() : null
 }
 
@@ -359,36 +357,38 @@ function parseGrowwMfs(sheet) {
   return holdings.length ? { holdings } : null
 }
 
+// My Stocks lists descriptive fund/company names with no ticker, so map them to
+// their NSE symbol for live pricing. Maps live in resources/name-symbols.json
+// (hand-maintained); add a line there when a new INDmoney holding appears.
+function indStocksSymbol(name) {
+  const key = name.toLowerCase().trim()
+  if (NAME_SYMBOLS.indmoney[key]) return NAME_SYMBOLS.indmoney[key]
+  return TICKER_RE.test(name.trim()) ? name.trim() : null
+}
+
 // --- "My Stocks" page (current stocks + ETFs). A real table with header
-// "Stock Name | Market Price | Invested (Qty/Price) | Current value | Total PnL".
+// "Stock Name | Quantity | Avg. Price". Invested is derived (qty × avgPrice);
+// the sheet no longer carries Market Price / Current value — those come live.
 function parseMyStocks(sheet) {
-  const header = findHeader(sheet.rows, ['stock name', 'market price', 'current value'])
+  const header = findHeader(sheet.rows, ['stock name', 'quantity', 'avg'])
   if (!header) return null
   const c = {
-    name: col(header.colMap, 'stock name'),
-    invested: col(header.colMap, 'invested'),
-    current: col(header.colMap, 'current value'),
+    name: col(header.colMap, 'stock name', 'name'),
+    qty: col(header.colMap, 'quantity', 'qty'),
+    avg: col(header.colMap, 'avg'),
   }
   const holdings = []
   for (let i = header.index + 1; i < sheet.rows.length; i++) {
     const row = sheet.rows[i] || []
-    const nameCell = row[c.name]
-    const investedCell = row[c.invested]
-    if (!nameCell || !/qty/i.test(String(investedCell || ''))) {
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    const qty = toNum(row[c.qty])
+    if (!name || qty == null) {
       if (holdings.length) break // table ended
       continue
     }
-    const nameParts = String(nameCell).split('\n').map((s) => s.trim()).filter(Boolean)
-    const name = nameParts[0]
-    const symbol = nameParts[1] || null
-    const lines = String(investedCell).split('\n').map((s) => s.trim()).filter(Boolean)
-    const invested = parseMoney(lines[0])
-    const qtyLine = lines.find((l) => /qty/i.test(l))
-    const qty = qtyLine ? toNum(qtyLine.replace(/qty/i, '')) : null
-    const avgLine = lines.find((l) => /avg/i.test(l))
-    const avgPrice = avgLine ? parseMoney(avgLine.replace(/avg\.?/i, '')) : null
-    const current = parseMoney(row[c.current])
-    const pnl = invested != null && current != null ? current - invested : null
+    const avgPrice = parseMoney(row[c.avg])
+    const invested = avgPrice != null ? qty * avgPrice : null
+    const symbol = indStocksSymbol(name)
     holdings.push({
       name,
       isin: null,
@@ -397,9 +397,11 @@ function parseMyStocks(sheet) {
       qty,
       avgPrice,
       invested,
-      current,
-      pnl,
-      pnlPct: pnl != null && invested ? (pnl / invested) * 100 : null,
+      // current/pnl recomputed from the live price in enrichHoldings (the sheet
+      // no longer carries a Current value); stay null until then.
+      current: null,
+      pnl: null,
+      pnlPct: null,
       folio: null,
       source: 'My Stocks',
     })

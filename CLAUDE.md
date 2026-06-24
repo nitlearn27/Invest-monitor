@@ -35,10 +35,10 @@ present. Native Google Sheets are fetched via the Drive **export** endpoint (not
 fallbacks.)
 
 1. **My Stocks** — current stocks **+ ETFs** portfolio. A real table, header
-   `Stock Name | Market Price | Invested (Qty/Price) | Current value | Total PnL`.
-   `parseMyStocks` splits `Name\nSYMBOL` and the `₹invested / "N Qty" / "₹avg Avg."`
-   cell; P&L = current − invested (the sheet's Total PnL cell is often `#ERROR!`).
-   → holdings with real **current value + P&L**.
+   `Stock Name | Quantity | Avg. Price`. `parseMyStocks` reads the three columns;
+   **invested is derived** (`qty × avgPrice`). The sheet no longer carries a ticker,
+   Market Price, or Current value — symbol comes from `IND_NAME_TO_SYMBOL` and
+   **current value + P&L are recomputed live** (see Live prices / Symbol resolution).
 2. **My MFs** — current MF portfolio. A real table, header
    `Fund Name | Invested | Current Value | Units`. Values are **compact**
    (`₹4.14L`, `₹-3.04K`) so they go through `parseMoney`. `parseMyMfs` reads
@@ -96,11 +96,13 @@ The sheet is the source of truth only for **qty / avgPrice / invested**; the
 - `Dashboard` fetches on load + cache-boot and exposes a **Refresh prices** action
   (`AppBar` ⋮ menu). It renders an `enrichHoldings` `useMemo` so every tab/card
   sees live values — `portfolio.js` needs no change.
-- Symbol resolution: **My Stocks** carries the ticker (2nd name line). **Stocks
-  Groww** lists only "Company" — `growwSymbol` in `classify.js` uses it directly
-  if it's ticker-like, else maps known descriptive ETF names via
-  `GROWW_NAME_TO_SYMBOL` (e.g. `ICICI Prud Gold ETF`→`GOLDIETF`, `Mirae … FANG+`
-  →`MAFANG`). Add a line there when a new descriptively-named ETF appears.
+- Symbol resolution: both broker name→NSE-ticker maps live in the committed
+  **`resources/name-symbols.json`** (`{ indmoney, groww }`, hand-maintained — add
+  a line when a new descriptively-named holding appears). **My Stocks** has no
+  ticker — `indStocksSymbol` reads the `indmoney` map. **Stocks Groww** lists only
+  "Company" — `growwSymbol` uses it directly if it's ticker-like, else maps known
+  descriptive ETF names via the `groww` map (e.g. `ICICI Prud Gold ETF`→`GOLDIETF`,
+  `Mirae … FANG+`→`MAFANG`). Both resolvers live in `classify.js`.
 - Worker: `proxy/` (`src/worker.js` + `wrangler.jsonc`), locked to Yahoo hosts,
   60s edge cache. Deploy/redeploy with `cd proxy && npx wrangler deploy`.
 
@@ -163,10 +165,12 @@ the sheet.
   `AssetTab` (generic Stocks/ETFs/MF), `ConsolidatedTab`, `TransactionsTab`,
   `ReconcilePanel`, `StateViews`, `SourceLegend` (platform colour key)
 - `resources/` — sample INDmoney exports for local dev/testing (gitignored as
-  personal financial data), plus the committed `mf-schemes.json`
-  MF-name→scheme-code map. The dir is gitignored, but `mf-schemes.json` is
-  explicitly un-ignored (`!resources/mf-schemes.json`) since `navs.js` imports it
-  at build time and bakes it into the bundle (scheme codes are public AMFI data).
+  personal financial data), plus two committed maps: `mf-schemes.json`
+  (MF-name→scheme-code) and `name-symbols.json` (broker name→NSE-ticker, `{ indmoney,
+  groww }`). The dir is gitignored, but both JSONs are explicitly un-ignored
+  (`!resources/mf-schemes.json`, `!resources/name-symbols.json`) since `navs.js` /
+  `classify.js` import them at build time and bake them into the bundle (scheme
+  codes and NSE tickers are public data).
 
 ## Normalized shapes
 - holding: `{ name, isin, symbol|null, type:'stock'|'etf'|'mf', qty, avgPrice,
