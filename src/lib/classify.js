@@ -3,7 +3,13 @@
 
 import NAME_SYMBOLS from '../../resources/name-symbols.json'
 
-const norm = (v) => (v == null ? '' : String(v).trim().toLowerCase())
+const norm = (v) => {
+  if (v == null) return ''
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? '' : v.toISOString().toLowerCase()
+  }
+  return String(v).trim().toLowerCase()
+}
 
 const toNum = (v) => {
   if (v == null || v === '') return null
@@ -130,15 +136,21 @@ function parseMfTransactions(sheet) {
 
 // --- Groww MF transactions sheet (from the user's newly added Google Sheet).
 // Header "Date | Mutual Fund Name | Amount / Units | Type | Status"
+// Or the split format: "Date | Mutual Fund Name | Amount | Type | Units | Status"
 // Dates are formatted like "3 Jun '26".
 // Amount / Units can be "₹50,000" or "2725.771 Units".
 function parseGrowwMfTransactions(sheet) {
-  const header = findHeader(sheet.rows, ['mutual fund name', 'amount / units', 'type'])
+  const header = findHeader(sheet.rows, ['mutual fund name', 'amount / units', 'type']) ||
+                 findHeader(sheet.rows, ['mutual fund name', 'amount', 'type'])
   if (!header) return null
+
+  const isSplitFormat = !header.colMap['amount / units']
   const c = {
     date: col(header.colMap, 'date'),
     name: col(header.colMap, 'mutual fund name', 'name'),
-    amtUnits: col(header.colMap, 'amount / units'),
+    amtUnits: isSplitFormat ? -1 : col(header.colMap, 'amount / units'),
+    amount: isSplitFormat ? col(header.colMap, 'amount') : -1,
+    units: isSplitFormat ? col(header.colMap, 'units') : -1,
     type: col(header.colMap, 'type'),
     status: col(header.colMap, 'status'),
   }
@@ -175,15 +187,20 @@ function parseGrowwMfTransactions(sheet) {
     const typeStr = row[c.type] == null ? '' : String(row[c.type]).trim().toUpperCase()
     const side = typeStr === 'SELL' ? 'SELL' : 'BUY'
 
-    const amtUnitsStr = row[c.amtUnits] == null ? '' : String(row[c.amtUnits]).trim()
     let amount = null
     let units = null
 
-    if (amtUnitsStr.toLowerCase().includes('units')) {
-      const numStr = amtUnitsStr.replace(/units/i, '').trim()
-      units = toNum(numStr)
+    if (isSplitFormat) {
+      amount = c.amount !== -1 && row[c.amount] != null ? parseMoney(row[c.amount]) : null
+      units = c.units !== -1 && row[c.units] != null ? toNum(row[c.units]) : null
     } else {
-      amount = parseMoney(amtUnitsStr)
+      const amtUnitsStr = row[c.amtUnits] == null ? '' : String(row[c.amtUnits]).trim()
+      if (amtUnitsStr.toLowerCase().includes('units')) {
+        const numStr = amtUnitsStr.replace(/units/i, '').trim()
+        units = toNum(numStr)
+      } else {
+        amount = parseMoney(amtUnitsStr)
+      }
     }
 
     transactions.push({
