@@ -34,6 +34,11 @@
     "schemeName": "ICICI Prudential Multi-Asset Fund - Growth",
     "plan": "Regular"
   },
+  "icici prudential balanced advantage": {
+    "schemeCode": 120377,
+    "schemeName": "ICICI Prudential Balanced Advantage Fund - Direct Plan -  Growth",
+    "plan": "Direct"
+  },
   "icici prudential banking and financial services": {
     "schemeCode": 120244,
     "schemeName": "ICICI Prudential Banking and Financial Services Fund - Direct Plan -  Growth",

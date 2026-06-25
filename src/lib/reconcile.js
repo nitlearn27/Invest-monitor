@@ -19,6 +19,7 @@ const EPS = 0.001
 // ETF") name the same scrip differently and carry no ISIN. Build a fuzzy key
 // from the first two significant name tokens so they reconcile.
 const STOP = new Set(['ltd', 'limited', 'etf', 'fund', 'the', 'india', 'oswal', 'ind', 'co', 'of'])
+const ABBREV = { pru: 'prudential', prud: 'prudential' }
 function nameKey(name) {
   const toks = String(name || '')
     .toLowerCase()
@@ -26,6 +27,7 @@ function nameKey(name) {
     .replace(/(\d)([a-z])/g, '$1 $2')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)
+    .map((t) => ABBREV[t] || t)
     .filter((t) => t && !STOP.has(t) && !/^\d+$/.test(t))
   return toks.slice(0, 2).join(' ')
 }

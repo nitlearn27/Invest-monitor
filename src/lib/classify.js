@@ -128,6 +128,78 @@ function parseMfTransactions(sheet) {
   return transactions.length ? { transactions } : null
 }
 
+// --- Groww MF transactions sheet (from the user's newly added Google Sheet).
+// Header "Date | Mutual Fund Name | Amount / Units | Type | Status"
+// Dates are formatted like "3 Jun '26".
+// Amount / Units can be "₹50,000" or "2725.771 Units".
+function parseGrowwMfTransactions(sheet) {
+  const header = findHeader(sheet.rows, ['mutual fund name', 'amount / units', 'type'])
+  if (!header) return null
+  const c = {
+    date: col(header.colMap, 'date'),
+    name: col(header.colMap, 'mutual fund name', 'name'),
+    amtUnits: col(header.colMap, 'amount / units'),
+    type: col(header.colMap, 'type'),
+    status: col(header.colMap, 'status'),
+  }
+  const transactions = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = row[c.name] == null ? '' : String(row[c.name]).trim()
+    if (!name) {
+      if (transactions.length) break // table ended
+      continue
+    }
+
+    if (c.status !== -1) {
+      const rawStatus = row[c.status] == null ? '' : String(row[c.status]).trim()
+      if (rawStatus.toLowerCase().includes('failed') || rawStatus === '') {
+        continue
+      }
+    }
+
+    const rawDate = row[c.date]
+    let parsedDate = null
+    if (rawDate) {
+      if (rawDate instanceof Date) {
+        parsedDate = Number.isNaN(rawDate.getTime()) ? null : rawDate
+      } else {
+        const cleanDateStr = String(rawDate).replace(/'/g, '').trim()
+        parsedDate = new Date(cleanDateStr)
+        if (Number.isNaN(parsedDate.getTime())) {
+          parsedDate = parseNumericDmy(rawDate)
+        }
+      }
+    }
+
+    const typeStr = row[c.type] == null ? '' : String(row[c.type]).trim().toUpperCase()
+    const side = typeStr === 'SELL' ? 'SELL' : 'BUY'
+
+    const amtUnitsStr = row[c.amtUnits] == null ? '' : String(row[c.amtUnits]).trim()
+    let amount = null
+    let units = null
+
+    if (amtUnitsStr.toLowerCase().includes('units')) {
+      const numStr = amtUnitsStr.replace(/units/i, '').trim()
+      units = toNum(numStr)
+    } else {
+      amount = parseMoney(amtUnitsStr)
+    }
+
+    transactions.push({
+      date: parsedDate,
+      name,
+      side,
+      units,
+      nav: null,
+      amount: amount != null ? Math.round(amount) : null,
+      source: 'MF Groww',
+    })
+  }
+  return transactions.length ? { transactions } : null
+}
+
+
 // --- "My MFs" page (current MF portfolio). Now a real table with header
 // "Fund Name | Invested | Current Value | Units". Values are compact (e.g.
 // "₹4.14L"), and so are the Units (e.g. "3K" = 3000, "7.61K"), so both go
@@ -565,6 +637,12 @@ export function buildDataset(parsedFiles) {
           sheet: sheet.name,
           type: isGroww ? 'groww-stock-transactions' : 'stock-transactions'
         })
+        continue
+      }
+      const growwMfTxn = parseGrowwMfTransactions(sheet)
+      if (growwMfTxn) {
+        mfTransactions.push(...growwMfTxn.transactions)
+        recognized.push({ file: file.fileName, sheet: sheet.name, type: 'groww-mf-transactions' })
         continue
       }
       const mfTxn = parseMfTransactions(sheet)

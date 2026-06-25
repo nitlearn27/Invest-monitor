@@ -15,7 +15,7 @@ import SCHEME_MAP from '../../resources/mf-schemes.json'
 
 const MFAPI = 'https://api.mfapi.in/mf'
 const TTL_MS = 12 * 60 * 60 * 1000 // NAV is daily — refresh at most ~twice a day
-const HISTORY_KEEP = 120 // newest entries to retain (covers any sheet snapshot)
+const HISTORY_KEEP = 1000 // newest entries to retain (covers any sheet snapshot)
 const CACHE_KEY = 'invest-monitor:navs:v1'
 
 // Normalize an MF name to a stable lookup key. More discriminating than
@@ -42,11 +42,11 @@ export function schemeFor(name) {
   return SCHEME_MAP[mfKey(name)] || null
 }
 
-// AMFI scheme codes needed to price a set of holdings (deduped).
-export function schemeCodesFor(holdings) {
+// AMFI scheme codes needed to price a set of holdings or transactions (deduped).
+export function schemeCodesFor(items, isTxn = false) {
   const codes = new Set()
-  for (const h of holdings || []) {
-    if (h.type !== 'mf') continue
+  for (const h of items || []) {
+    if (!isTxn && h.type !== 'mf') continue
     const s = schemeFor(h.name)
     if (s?.schemeCode != null) codes.add(s.schemeCode)
   }
@@ -177,3 +177,33 @@ export function enrichMfHoldings(holdings, navMap) {
     }
   })
 }
+
+// Apply historical NAVs to MF transactions to resolve missing amount/units.
+export function enrichMfTransactions(mfTxns, navMap) {
+  if (!mfTxns) return mfTxns
+  return mfTxns.map((t) => {
+    // If we already have everything, or don't have a date, skip.
+    if (!t.date || (t.amount != null && t.units != null && t.nav != null)) return t
+
+    const scheme = schemeFor(t.name)
+    if (!scheme) return t
+
+    const nav = navMap?.get?.(scheme.schemeCode)
+    if (!nav || !nav.history?.length) return t
+
+    const navAt = navOn(nav.history, t.date)
+    if (navAt == null) return t
+
+    const enriched = { ...t }
+    if (enriched.nav == null) enriched.nav = navAt
+
+    if (enriched.amount == null && enriched.units != null) {
+      enriched.amount = Math.round(enriched.units * navAt)
+    } else if (enriched.units == null && enriched.amount != null) {
+      enriched.units = enriched.amount / navAt
+    }
+
+    return enriched
+  })
+}
+

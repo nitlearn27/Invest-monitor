@@ -281,15 +281,20 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
                       </thead>
                       <tbody>
                         {detailMf.map((t, i) => (
-                          <tr key={`mf-${i}`}>
+                          <tr key={`mf-${i}`} className={t.side === 'SELL' ? 'neg' : ''}>
                             <td className="nm">
                               {t.name}
                               {t.sip && <span className="sip-note"> · SIP</span>}
+                              {t.side === 'SELL' && <span className="sip-note" style={{ color: 'var(--neg)' }}> · SELL</span>}
                             </td>
                             <td className="dt">{fmtDate(t.date)}</td>
                             <td className="ta-r">{formatNumber(t.nav)}</td>
-                            <td className="ta-r">{formatNumber(t.units)}</td>
-                            <td className="ta-r">{formatINR(t.amount)}</td>
+                            <td className="ta-r">
+                              {t.side === 'SELL' ? '-' : ''}{formatNumber(t.units)}
+                            </td>
+                            <td className="ta-r">
+                              {t.side === 'SELL' ? '-' : ''}{formatINR(t.amount)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -316,15 +321,26 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {detailEq.map((t, i) => (
-                          <tr key={`eq-${i}`}>
-                            <td className="nm">{t.name}</td>
-                            <td className="dt">{fmtDate(t.date)}</td>
-                            <td className="ta-r">{formatNumber(t.price)}</td>
-                            <td className="ta-r">{formatNumber(t.qty)}</td>
-                            <td className="ta-r">{formatINR((t.qty || 0) * (t.price || 0))}</td>
-                          </tr>
-                        ))}
+                        {detailEq.map((t, i) => {
+                          const isSell = t.side === 'SELL'
+                          const val = (t.qty || 0) * (t.price || 0)
+                          return (
+                            <tr key={`eq-${i}`} className={isSell ? 'neg' : ''}>
+                              <td className="nm">
+                                {t.name}
+                                {isSell && <span className="sip-note" style={{ color: 'var(--neg)' }}> · SELL</span>}
+                              </td>
+                              <td className="dt">{fmtDate(t.date)}</td>
+                              <td className="ta-r">{formatNumber(t.price)}</td>
+                              <td className="ta-r">
+                                {isSell ? '-' : ''}{formatNumber(t.qty)}
+                              </td>
+                              <td className="ta-r">
+                                {isSell ? '-' : ''}{formatINR(t.value != null ? t.value : val)}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

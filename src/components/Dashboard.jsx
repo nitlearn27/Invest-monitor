@@ -13,7 +13,7 @@ import { fetchDriveWorkbooks } from '../lib/drive.js'
 import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
 import { fetchQuotes, enrichHoldings } from '../lib/quotes.js'
-import { fetchNavs, enrichMfHoldings, schemeCodesFor } from '../lib/navs.js'
+import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor } from '../lib/navs.js'
 
 const TABS = [
   { key: 'consolidated', label: 'Consolidated' },
@@ -109,7 +109,12 @@ export default function Dashboard() {
   const loadNavs = useCallback(
     async (force) => {
       if (!dataset) return
-      const codes = schemeCodesFor(dataset.holdings)
+      const codes = [
+        ...new Set([
+          ...schemeCodesFor(dataset.holdings, false),
+          ...schemeCodesFor(dataset.mfTransactions, true),
+        ]),
+      ]
       if (codes.length === 0) return
       const map = await fetchNavs(codes, { force })
       if (map.size > 0) setNavMap(map)
@@ -135,7 +140,11 @@ export default function Dashboard() {
   const view = useMemo(
     () =>
       dataset
-        ? { ...dataset, holdings: enrichMfHoldings(enrichHoldings(dataset.holdings, priceMap), navMap) }
+        ? {
+            ...dataset,
+            holdings: enrichMfHoldings(enrichHoldings(dataset.holdings, priceMap), navMap),
+            mfTransactions: enrichMfTransactions(dataset.mfTransactions, navMap),
+          }
         : null,
     [dataset, priceMap, navMap],
   )
