@@ -5,6 +5,7 @@ import ConsolidatedTab from './ConsolidatedTab.jsx'
 import MonthlyTab from './MonthlyTab.jsx'
 import AssetTab from './AssetTab.jsx'
 import TransactionsTab from './TransactionsTab.jsx'
+import MfWhatIf from './MfWhatIf.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
 import ProjectionTab from './ProjectionTab.jsx'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
@@ -13,7 +14,9 @@ import { fetchDriveWorkbooks } from '../lib/drive.js'
 import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
 import { fetchQuotes, enrichHoldings } from '../lib/quotes.js'
-import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor } from '../lib/navs.js'
+import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor, mfKey } from '../lib/navs.js'
+import { withDerivedHoldings } from '../lib/derive.js'
+import { withRecurringSips } from '../lib/monthly.js'
 
 const TABS = [
   { key: 'consolidated', label: 'Consolidated' },
@@ -85,9 +88,16 @@ export default function Dashboard() {
   const loadPrices = useCallback(
     async (force) => {
       if (!pricesConfigured() || !dataset) return
-      const symbols = dataset.holdings
-        .filter((h) => (h.type === 'stock' || h.type === 'etf') && h.symbol)
-        .map((h) => h.symbol)
+      // Holdings + transactions: INDmoney equity holdings are derived from the
+      // transactions sheet, so their symbols only exist on the transactions.
+      const symbols = [
+        ...new Set([
+          ...dataset.holdings
+            .filter((h) => (h.type === 'stock' || h.type === 'etf') && h.symbol)
+            .map((h) => h.symbol),
+          ...dataset.transactions.filter((t) => t.symbol).map((t) => t.symbol),
+        ]),
+      ]
       if (symbols.length === 0) return
       setPricesBusy(true)
       try {
@@ -135,19 +145,32 @@ export default function Dashboard() {
     }
   }, [loadPrices, loadNavs])
 
-  // Holdings with live prices applied; everything downstream (cards, allocation,
-  // tabs) reads these so the UI reflects live values without further changes.
-  const view = useMemo(
-    () =>
-      dataset
-        ? {
-            ...dataset,
-            holdings: enrichMfHoldings(enrichHoldings(dataset.holdings, priceMap), navMap),
-            mfTransactions: enrichMfTransactions(dataset.mfTransactions, navMap),
-          }
-        : null,
-    [dataset, priceMap, navMap],
-  )
+  // View pipeline: inject the recurring SIP legs, resolve their units from NAV
+  // history, derive the INDmoney holdings from the transaction sheets (replacing
+  // the manual My Stocks / My MFs sheets), then apply live prices + NAVs.
+  // Everything downstream (cards, allocation, tabs) reads these.
+  const view = useMemo(() => {
+    if (!dataset) return null
+    const mfTransactions = enrichMfTransactions(withRecurringSips(dataset.mfTransactions), navMap)
+    const holdings = withDerivedHoldings(dataset.holdings, dataset.transactions, mfTransactions)
+    return {
+      ...dataset,
+      holdings: enrichMfHoldings(enrichHoldings(holdings, priceMap), navMap),
+      mfTransactions,
+    }
+  }, [dataset, priceMap, navMap])
+
+  // Latest buy per fund — ranks the MF tab's folded view (5 most recently
+  // bought funds up front; funds with no transactions rank last).
+  const mfLastBuy = useMemo(() => {
+    const m = new Map()
+    for (const t of view?.mfTransactions || []) {
+      if (!t.date) continue
+      const k = mfKey(t.name)
+      if (t.date.getTime() > (m.get(k) || 0)) m.set(k, t.date.getTime())
+    }
+    return m
+  }, [view])
 
   // Refresh always re-pulls from Drive (when configured).
   const refresh = driveConfigured() ? loadFromDrive : null
@@ -207,7 +230,18 @@ export default function Dashboard() {
               <MonthlyTab transactions={view.transactions} mfTransactions={view.mfTransactions} />
             )}
             {tab === 'stock' && <AssetTab type="stock" label="Stocks" holdings={view.holdings} />}
-            {tab === 'mf' && <AssetTab type="mf" label="Mutual Funds" holdings={view.holdings} />}
+            {tab === 'mf' && (
+              <>
+                <AssetTab
+                  type="mf"
+                  label="Mutual Funds"
+                  holdings={view.holdings}
+                  foldTo={5}
+                  rankOf={(h) => mfLastBuy.get(mfKey(h.name)) ?? 0}
+                />
+                <MfWhatIf mfTransactions={view.mfTransactions} navMap={navMap} />
+              </>
+            )}
             {tab === 'etf' && <AssetTab type="etf" label="ETFs" holdings={view.holdings} />}
             {tab === 'transactions' && (
               <TransactionsTab

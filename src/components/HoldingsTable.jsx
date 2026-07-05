@@ -2,7 +2,7 @@
 //   { key, label, align, render(row), sortValue(row), className }
 import { useMemo, useState } from 'react'
 
-export default function HoldingsTable({ columns, rows, initialSort, footer, rowClassName, rowStyle }) {
+export default function HoldingsTable({ columns, rows, initialSort, footer, rowClassName, rowStyle, className }) {
   const [sort, setSort] = useState(initialSort || { key: null, dir: 'desc' })
 
   const sorted = useMemo(() => {
@@ -26,7 +26,7 @@ export default function HoldingsTable({ columns, rows, initialSort, footer, rowC
     )
 
   return (
-    <div className="table-wrap card">
+    <div className={`table-wrap card${className ? ` ${className}` : ''}`}>
       <table className="table">
         <thead>
           <tr>

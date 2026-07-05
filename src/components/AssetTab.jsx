@@ -14,16 +14,31 @@ function pnlClass(v) {
   return v >= 0 ? 'pos' : 'neg'
 }
 
-export default function AssetTab({ type, label, holdings }) {
+export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
   // Optional filter to a single broker platform (tap a legend chip). Resets per
   // tab since each tab mounts its own AssetTab.
   const [activeSource, setActiveSource] = useState(null)
+  // When `foldTo` is set, only the top-ranked N rows (per `rankOf`, e.g. most
+  // recently bought) show up front; "See all" reveals the rest in a scrollable
+  // table.
+  const [expanded, setExpanded] = useState(false)
 
   const allRows = holdings.filter((h) => h.type === type)
   if (allRows.length === 0) {
     return <EmptyState title={`No ${label.toLowerCase()} found`}>Refresh to pull the matching sheet.</EmptyState>
   }
   const rows = activeSource ? allRows.filter((h) => platformKeyOf(h.source) === activeSource) : allRows
+
+  const foldable = foldTo != null && rows.length > foldTo
+  const tableRows =
+    foldable && !expanded
+      ? [...rows]
+          .sort(
+            (a, b) =>
+              (rankOf?.(b) ?? 0) - (rankOf?.(a) ?? 0) || (b.invested ?? 0) - (a.invested ?? 0),
+          )
+          .slice(0, foldTo)
+      : rows
 
   const isMF = type === 'mf'
   const invested = sum(rows, (h) => h.invested)
@@ -132,12 +147,21 @@ export default function AssetTab({ type, label, holdings }) {
 
       <HoldingsTable
         columns={columns}
-        rows={rows}
+        rows={tableRows}
         initialSort={{ key: 'invested', dir: 'desc' }}
         footer={footer}
         rowClassName={sourceRowClassName}
         rowStyle={sourceRowStyle}
+        className={foldable && expanded ? 'table-wrap--scroll' : undefined}
       />
+
+      {foldable && (
+        <button type="button" className="see-more" onClick={() => setExpanded((v) => !v)}>
+          {expanded
+            ? `Show ${foldTo} recently bought`
+            : `See all ${rows.length} ${label.toLowerCase()}`}
+        </button>
+      )}
     </div>
   )
 }

@@ -2,21 +2,29 @@
 
 // Recurring SIPs the user has confirmed but that aren't (fully) reflected in the
 // pasted INDmoney statement. Hardcoded for now; one synthetic BUY is generated
-// per month on `day`, skipping any month where a real matching transaction
-// already exists on that day (so it never double-counts).
-const RECURRING_SIPS = [{ fund: 'Edelweiss Mid Cap Fund', amount: 10000, day: 4 }]
+// per month on `day` from `start` (YYYY-MM), skipping any month where a real
+// matching transaction already exists on that day (so it never double-counts).
+// `start` must be explicit: the txn sheet now reaches back to a 2015 lump-sum
+// row, so deriving the start from the earliest transaction would fabricate a
+// decade of phantom SIP legs. Verified against the sheet snapshot: legs from
+// 2025-05 reproduce the holding's unit gap to within 0.3%.
+const RECURRING_SIPS = [{ fund: 'Edelweiss Mid Cap Fund', amount: 10000, day: 4, start: '2025-05' }]
 
 const sameFund = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
 
-// Augment MF transactions with the hardcoded recurring SIPs, from the earliest
-// tracked month through the current month (not future-dated).
+// Augment MF transactions with the hardcoded recurring SIPs, from each SIP's
+// start month through the current month (not future-dated). Idempotent: legs
+// already present (or a real same-day transaction) are skipped, so applying it
+// to an already-augmented list adds nothing.
 export function withRecurringSips(mfTxns = [], now = new Date()) {
   if (!RECURRING_SIPS.length) return mfTxns
   const times = mfTxns.map((t) => t.date?.getTime()).filter(Boolean)
-  const start = times.length ? new Date(Math.min(...times)) : new Date(now.getFullYear(), now.getMonth() - 11, 1)
+  const fallback = times.length ? new Date(Math.min(...times)) : new Date(now.getFullYear(), now.getMonth() - 11, 1)
   const extra = []
 
   for (const sip of RECURRING_SIPS) {
+    const [sy, sm] = sip.start ? sip.start.split('-').map(Number) : []
+    const start = sip.start ? new Date(sy, sm - 1, 1) : fallback
     let y = start.getFullYear()
     let m = start.getMonth()
     while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth())) {

@@ -1,7 +1,9 @@
 // Detect INDmoney report types by sheet/header content and normalize rows into
 // a common shape. Files are identified by their columns, NOT their filename.
 
-import NAME_SYMBOLS from '../../resources/name-symbols.json'
+// The `with` attribute keeps this importable from Node scripts (build-mf-schemes)
+// as well as Vite.
+import NAME_SYMBOLS from '../../resources/name-symbols.json' with { type: 'json' }
 
 const norm = (v) => {
   if (v == null) return ''
@@ -503,10 +505,11 @@ function parseMyStocks(sheet) {
 }
 
 // --- "Stocks Transactions" page (stock/ETF orders). A real table with header
-// "Date | Stock Name | Quantity | Order Type | Requested Price". `Order Type` is
-// the execution type (Limit/Market), NOT Buy/Sell — the sheet carries no side, so
-// every row is treated as BUY (this page only lists purchases). Symbol is absent
-// and resolved from the INDmoney name→ticker map, like My Stocks.
+// "Date | Stock Name | Quantity | Order Type | Requested Price". `Order Type`
+// carries the side ("Buy"/"Sell") — anything containing "sell" is a SELL, all
+// else a BUY. Symbol is absent and resolved from the INDmoney name→ticker map,
+// like My Stocks. These transactions are the source of truth for the derived
+// INDmoney stock/ETF holdings (see derive.js), so the paste must be complete.
 function parseStockTransactions(sheet, isGroww = false) {
   const header = findHeader(sheet.rows, ['date', 'stock name', 'quantity'])
   if (!header) return null
@@ -536,9 +539,7 @@ function parseStockTransactions(sheet, isGroww = false) {
 
     const symbol = isGroww ? growwSymbol(name) : indStocksSymbol(name)
     const rawOrderType = row[c.orderType] == null ? '' : String(row[c.orderType]).trim()
-    const side = isGroww
-      ? (rawOrderType.toLowerCase().includes('sell') ? 'SELL' : 'BUY')
-      : 'BUY'
+    const side = rawOrderType.toLowerCase().includes('sell') ? 'SELL' : 'BUY'
     transactions.push({
       date: parseNumericDmy(row[c.date]),
       name,

@@ -19,6 +19,11 @@
     "schemeName": "Axis Small Cap Fund - Direct Plan - Growth",
     "plan": "Direct"
   },
+  "bandhan small cap": {
+    "schemeCode": 147946,
+    "schemeName": "BANDHAN SMALL CAP FUND - DIRECT PLAN GROWTH",
+    "plan": "Direct"
+  },
   "dsp mid cap": {
     "schemeCode": 119071,
     "schemeName": "DSP Midcap Fund - Direct Plan - Growth",
@@ -27,6 +32,11 @@
   "edelweiss mid cap": {
     "schemeCode": 140228,
     "schemeName": "Edelweiss Mid Cap Fund - Direct Plan - Growth Option",
+    "plan": "Direct"
+  },
+  "edelweiss technology": {
+    "schemeCode": 152437,
+    "schemeName": "Edelweiss Technology Fund - Direct Plan - Growth",
     "plan": "Direct"
   },
   "icici pru multi asset": {
@@ -50,9 +60,9 @@
     "plan": "Direct"
   },
   "icici prudential elss tax saver": {
-    "schemeCode": 120592,
-    "schemeName": "ICICI Prudential ELSS Tax Saver Fund - Direct Plan - Growth",
-    "plan": "Direct"
+    "schemeCode": 100354,
+    "schemeName": "ICICI Prudential ELSS Tax Saver Fund - Growth",
+    "plan": "Regular"
   },
   "icici prudential flexicap": {
     "schemeCode": 148990,
@@ -77,6 +87,11 @@
   "invesco india mid cap": {
     "schemeCode": 120403,
     "schemeName": "Invesco India Midcap Fund - Direct Plan - Growth Option",
+    "plan": "Direct"
+  },
+  "invesco india smallcap": {
+    "schemeCode": 145137,
+    "schemeName": "Invesco India Smallcap Fund - Direct Plan - Growth",
     "plan": "Direct"
   },
   "kotak flexicap": {
@@ -114,6 +129,11 @@
     "schemeName": "Nippon India Innovation Fund-Regular Plan-Growth Option",
     "plan": "Regular"
   },
+  "nippon india large cap": {
+    "schemeCode": 118632,
+    "schemeName": "Nippon India Large Cap Fund - Direct Plan Growth Plan - Growth Option",
+    "plan": "Direct"
+  },
   "nippon india mid cap": {
     "schemeCode": 118668,
     "schemeName": "Nippon India Growth Mid Cap Fund - Direct Plan Growth Plan - Growth Option",
@@ -137,6 +157,11 @@
   "sbi contra": {
     "schemeCode": 119835,
     "schemeName": "SBI CONTRA FUND - DIRECT PLAN - GROWTH",
+    "plan": "Direct"
+  },
+  "sbi elss tax saver": {
+    "schemeCode": 119723,
+    "schemeName": "SBI ELSS Tax Saver FUND - DIRECT PLAN -GROWTH",
     "plan": "Direct"
   },
   "sbi equity hybrid": {

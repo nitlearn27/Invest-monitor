@@ -56,6 +56,11 @@ export default function AppBar({
           <span className="appbar__wordmark-cap">A</span>rti&rsquo;s{' '}
           <span className="appbar__wordmark-cap">A</span>ssets
         </span>
+        {hasTabs && (
+          <span className="appbar__sub-title">
+            {tabs.find((t) => t.key === tab)?.label}
+          </span>
+        )}
       </div>
 
       {hasTabs && (

@@ -40,6 +40,10 @@ const OVERRIDES = {
   'icici prudential value': { schemeCode: 120323, plan: 'Direct' },
   'icici prudential medium term bond': { schemeCode: 120670, plan: 'Direct' },
   'icici prudential corporate bond': { schemeCode: 120692, plan: 'Direct' },
+  // Legacy 2015 lump-sum holding — Regular plan, unlike everything else on
+  // INDmoney (sheet current ₹8.32L / 899.243 units ⇒ NAV ~925 = Regular; the
+  // Direct NAV would imply ~₹9.4L).
+  'icici prudential elss tax saver': { schemeCode: 100354, plan: 'Regular' },
 }
 
 // MUST stay identical to mfKey() in src/lib/navs.js.
@@ -118,13 +122,20 @@ async function harvestNames() {
     if (!res.ok) continue
     parsed.push(parseWorkbook(await res.arrayBuffer(), f.name, f.modifiedTime))
   }
-  const { holdings } = buildDataset(parsed)
-  // unique MF holdings by mfKey, keeping the first name + its source
+  const { holdings, mfTransactions } = buildDataset(parsed)
+  // Unique MF names by mfKey, keeping the first name + its source. Harvest from
+  // holdings AND MF transactions — the INDmoney holdings sheet is gone (holdings
+  // are derived from transactions now), so transactions are the only place its
+  // fund names appear.
   const byKey = new Map()
   for (const h of holdings) {
     if (h.type !== 'mf') continue
     const k = mfKey(h.name)
     if (k && !byKey.has(k)) byKey.set(k, { name: h.name, source: h.source })
+  }
+  for (const t of mfTransactions) {
+    const k = mfKey(t.name)
+    if (k && !byKey.has(k)) byKey.set(k, { name: t.name, source: t.source })
   }
   return [...byKey.values()]
 }

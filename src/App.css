@@ -90,6 +90,10 @@
   margin-top: 10px;
 }
 
+.appbar__sub-title {
+  display: none;
+}
+
 /* Portfolio Analysis embedded report (auto-sized to its content) */
 .analysis-frame {
   display: block;
@@ -634,8 +638,10 @@
   background: var(--border-strong);
   border-radius: 99px;
 }
-.month-more {
+.month-more,
+.see-more {
   align-self: stretch;
+  width: 100%;
   margin-top: 10px;
   padding: 9px 12px;
   border: 1px dashed var(--border-strong);
@@ -647,7 +653,8 @@
   cursor: pointer;
   transition: 0.13s ease;
 }
-.month-more:hover {
+.month-more:hover,
+.see-more:hover {
   background: var(--surface);
   color: var(--text);
   border-color: var(--accent, var(--border-strong));
@@ -865,6 +872,14 @@
 .table-wrap {
   padding: 0;
   overflow-x: auto;
+}
+/* Expanded fold ("See all"): cap the height and scroll inside; the thead is
+   already sticky so the header stays put. */
+.table-wrap--scroll {
+  max-height: 62vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .table {
   width: 100%;
@@ -1594,6 +1609,20 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+  .appbar__sub-title {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin: 0;
+    line-height: 1;
   }
   .app main.container {
     margin-top: 8px;
@@ -1696,5 +1725,197 @@
   .dtable-wrap {
     flex: 1;
     min-height: 0;
+  }
+}
+
+/* ---------- MF what-if (buying-pattern analysis) ---------- */
+.whatif {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 26px;
+}
+.whatif__intro {
+  margin: 0 2px 2px;
+  font-size: 13px;
+  color: var(--text-mute);
+  max-width: 72ch;
+  line-height: 1.5;
+}
+.whatif__card {
+  padding: 18px 20px 16px;
+}
+.whatif__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.whatif__head .card__title {
+  margin-bottom: 4px;
+}
+.whatif__sub {
+  font-size: 12.5px;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+.segmented--sm button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+.whatif__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 2px 0 10px;
+}
+.whatif__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.whatif__key {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.whatif__dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  border: 2px solid var(--bg);
+}
+.whatif__chart {
+  position: relative;
+  outline: none;
+  touch-action: pan-y;
+}
+.whatif__chart:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.whatif__grid {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+.whatif__tick {
+  fill: var(--text-mute);
+  font-size: 10.5px;
+}
+.whatif__crosshair {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+}
+.whatif__tooltip {
+  position: absolute;
+  top: 8px;
+  pointer-events: none;
+  background: #0c2245;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 11px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  min-width: 150px;
+  z-index: 5;
+}
+.whatif__tooltip-date {
+  color: var(--text-mute);
+  margin-bottom: 5px;
+}
+.whatif__tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1.5px 0;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.whatif__tooltip-row strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.whatif__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.whatif__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  color: var(--text-mute);
+}
+.whatif__chip strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.whatif__chip .pos {
+  color: var(--pos);
+}
+.whatif__chip .neg {
+  color: var(--neg);
+}
+.whatif__chip--best {
+  border-color: rgba(91, 140, 255, 0.55);
+}
+.whatif__chip-name {
+  color: var(--text-dim);
+}
+.whatif__best {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.whatif__grid--zero {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+.whatif__filters {
+  display: flex;
+  margin: 2px 0 0;
+}
+@media (max-width: 640px) {
+  .whatif__card {
+    padding: 14px 12px 12px;
+  }
+  .whatif__filters .segmented {
+    width: 100%;
+  }
+  .whatif__filters .segmented button {
+    flex: 1;
+    padding: 6px 0;
+  }
+  .whatif__legend {
+    gap: 4px 12px;
+  }
+  .whatif__legend-item {
+    font-size: 11.5px;
+  }
+  .whatif__chips {
+    gap: 6px;
+  }
+  .whatif__chip {
+    font-size: 11.5px;
+    padding: 5px 9px;
+    gap: 6px;
+  }
+  .whatif__tooltip {
+    min-width: 130px;
+    font-size: 11px;
   }
 }

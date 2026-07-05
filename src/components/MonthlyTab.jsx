@@ -6,7 +6,7 @@
 import { useState, useMemo } from 'react'
 import AllocationDonut from './AllocationDonut.jsx'
 import { EmptyState } from './StateViews.jsx'
-import { monthlyInvestments, mfCapBreakdown, equityBreakdown, withRecurringSips } from '../lib/monthly.js'
+import { monthlyInvestments, mfCapBreakdown, equityBreakdown } from '../lib/monthly.js'
 import { ASSET_COLORS } from '../config.js'
 import { formatINR, formatINRCompact, formatNumber } from '../lib/format.js'
 import SourceLegend from './SourceLegend.jsx'
@@ -26,8 +26,9 @@ const monthKeyOf = (d) =>
 export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
   const [activeSource, setActiveSource] = useState(null)
 
-  // Fold in the hardcoded recurring SIP(s) not present in the statement.
-  const allMfTxns = useMemo(() => withRecurringSips(mfTransactions), [mfTransactions])
+  // Recurring SIP legs are already injected upstream (Dashboard's view memo),
+  // with units resolved from NAV history.
+  const allMfTxns = mfTransactions
 
   // Gather distinct sources from all transactions for the legend filter.
   const allSources = useMemo(() => {

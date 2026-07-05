@@ -11,7 +11,7 @@
 // There is no ISIN/scheme code in our sheets, so each fund is matched to an AMFI
 // scheme code OFFLINE (once) by scripts/build-mf-schemes.mjs, which writes the
 // committed map below. At runtime we only read that map — never search.
-import SCHEME_MAP from '../../resources/mf-schemes.json'
+import SCHEME_MAP from '../../resources/mf-schemes.json' with { type: 'json' }
 
 const MFAPI = 'https://api.mfapi.in/mf'
 const TTL_MS = 12 * 60 * 60 * 1000 // NAV is daily — refresh at most ~twice a day

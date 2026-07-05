@@ -1,12 +1,19 @@
 {
   "indmoney": {
     "motilal nasdaq100": "MON100",
+    "motilal oswal nasdaq 100 etf": "MON100",
     "adani ports & special economic zone": "ADANIPORTS",
+    "adani ports & special economic zone ltd": "ADANIPORTS",
     "uti nifty next50": "NEXT50BETA",
+    "uti nifty next 50 etf": "NEXT50BETA",
     "dixon technologies (india)": "DIXON",
+    "dixon technologies (india) ltd": "DIXON",
     "sbi nifty50": "SETFNIF50",
+    "sbi etf nifty 50": "SETFNIF50",
     "hindustan copper": "HINDCOPPER",
-    "nippon silver etf": "SILVERBEES"
+    "hindustan copper ltd": "HINDCOPPER",
+    "nippon silver etf": "SILVERBEES",
+    "nippon india silver etf": "SILVERBEES"
   },
   "groww": {
     "icici prud gold etf": "GOLDIETF",
