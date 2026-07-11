@@ -164,16 +164,33 @@ export function enrichMfHoldings(holdings, navMap) {
       const navAt = navOn(nav.history, h.asOf)
       if (navAt) units = h.current / navAt
     }
-    if (units == null) return { ...h, marketPrice: nav.latest } // show NAV, keep sheet Current
+    if (units == null) {
+      const latestNav = nav.latest
+      const prevNav = nav.history?.length >= 2 ? nav.history[1].nav : null
+      const oneDayChangePct = prevNav ? ((latestNav - prevNav) / prevNav) * 100 : null
+      return {
+        ...h,
+        marketPrice: latestNav,
+        oneDayChange: null,
+        oneDayChangePct,
+      }
+    }
 
     const current = units * nav.latest
     const pnl = h.invested != null ? current - h.invested : null
+    const latestNav = nav.latest
+    const prevNav = nav.history?.length >= 2 ? nav.history[1].nav : null
+    const oneDayChangePct = prevNav ? ((latestNav - prevNav) / prevNav) * 100 : null
+    const oneDayChange = prevNav ? (latestNav - prevNav) * units : null
+
     return {
       ...h,
-      marketPrice: nav.latest,
+      marketPrice: latestNav,
       current,
       pnl,
       pnlPct: pnl != null && h.invested ? (pnl / h.invested) * 100 : null,
+      oneDayChange,
+      oneDayChangePct,
     }
   })
 }

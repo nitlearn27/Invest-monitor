@@ -4,7 +4,7 @@ import HoldingsTable from './HoldingsTable.jsx'
 import SourceLegend from './SourceLegend.jsx'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import { EmptyState } from './StateViews.jsx'
-import { platformKeyOf } from '../config.js'
+import { platformKeyOf, platformOf } from '../config.js'
 import { formatINR, formatNumber, formatPct } from '../lib/format.js'
 
 const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0)
@@ -46,6 +46,12 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
   const pnl = current - invested
   const pnlPct = invested ? (pnl / invested) * 100 : null
 
+  // 1D P&L calculations
+  const totalOneDayChange = sum(rows, (h) => h.oneDayChange)
+  const rowsWithOneDay = rows.filter((r) => r.oneDayChange != null)
+  const prevValForOneDay = sum(rowsWithOneDay, (h) => h.current - h.oneDayChange)
+  const totalOneDayChangePct = prevValForOneDay > 0 ? (totalOneDayChange / prevValForOneDay) * 100 : null
+
   const pnlCols = [
     { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
     {
@@ -62,15 +68,62 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
     },
   ]
 
+  const renderName = (r) => {
+    const platform = platformOf(r.source)
+    const initial = platform ? platform.label[0].toUpperCase() : null
+    return (
+      <span className="cell-name">
+        {r.name}
+        {initial && (
+          <span className="cell-source-initial" style={{ color: platform.color, marginLeft: '6px', fontWeight: 'bold' }}>
+            ({initial})
+          </span>
+        )}
+      </span>
+    )
+  }
+
   const columns = isMF
     ? [
-        { key: 'name', label: 'Fund', render: (r) => <span className="cell-name">{r.name}</span> },
+        { key: 'name', label: 'Fund', render: renderName },
+        {
+          key: 'oneDayChange',
+          label: '1D P&L',
+          align: 'right',
+          sortValue: (r) => r.oneDayChangePct,
+          render: (r) => {
+            if (r.oneDayChangePct == null) return '—'
+            return (
+              <span className={pnlClass(r.oneDayChangePct)}>
+                {r.oneDayChange != null ? (
+                  <>
+                    {formatINR(r.oneDayChange)} <small>({formatPct(r.oneDayChangePct)})</small>
+                  </>
+                ) : (
+                  formatPct(r.oneDayChangePct)
+                )}
+              </span>
+            )
+          },
+        },
+        {
+          key: 'pnlPct',
+          label: 'Total P&L %',
+          align: 'right',
+          render: (r) => <span className={pnlClass(r.pnlPct)}>{formatPct(r.pnlPct)}</span>,
+        },
+        {
+          key: 'pnl',
+          label: 'P&L',
+          align: 'right',
+          render: (r) => <span className={pnlClass(r.pnl)}>{formatINR(r.pnl)}</span>,
+        },
         { key: 'qty', label: 'Units', align: 'right', render: (r) => formatNumber(r.qty) },
         { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
-        ...pnlCols,
+        { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
       ]
     : [
-        { key: 'name', label: 'Name', render: (r) => <span className="cell-name">{r.name}</span> },
+        { key: 'name', label: 'Name', render: renderName },
         { key: 'qty', label: 'Qty', align: 'right', render: (r) => formatNumber(r.qty) },
         { key: 'avgPrice', label: 'Avg price', align: 'right', render: (r) => formatINR(r.avgPrice, { paise: true }) },
         { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
@@ -98,9 +151,18 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
       </td>
       {isMF ? (
         <>
+          <td className={`ta-r ${pnlClass(totalOneDayChange)}`}>
+            {totalOneDayChange !== 0 ? (
+              <>
+                {formatINR(totalOneDayChange)} <small>({formatPct(totalOneDayChangePct)})</small>
+              </>
+            ) : '—'}
+          </td>
+          <td className={`ta-r ${pnlClass(pnlPct)}`}>{formatPct(pnlPct)}</td>
+          <td className={`ta-r ${pnlClass(pnl)}`}>{formatINR(pnl)}</td>
           <td className="ta-r" />
           <td className="ta-r">{formatINR(invested)}</td>
-          {totalPnlCells}
+          <td className="ta-r">{formatINR(current)}</td>
         </>
       ) : (
         <>

@@ -11,7 +11,7 @@ import {
   equityHoldingsAllocation,
   topHoldings,
 } from '../lib/portfolio.js'
-import { ASSET_TYPES, ASSET_COLORS } from '../config.js'
+import { ASSET_TYPES, ASSET_COLORS, platformOf } from '../config.js'
 import { formatINR, formatINRCompact, formatPct } from '../lib/format.js'
 import { useIsMobile } from '../lib/useIsMobile.js'
 
@@ -132,6 +132,15 @@ export default function ConsolidatedTab({ holdings }) {
               <div className="bar-row__head">
                 <span className="cell-name">
                   {h.name}
+                  {(() => {
+                    const platform = platformOf(h.source)
+                    const initial = platform ? platform.label[0].toUpperCase() : null
+                    return initial && (
+                      <span className="cell-source-initial" style={{ color: platform.color, marginLeft: '6px', marginRight: '6px', fontWeight: 'bold' }}>
+                        ({initial})
+                      </span>
+                    )
+                  })()}
                   <span className="tag" style={{ '--tag': ASSET_COLORS[h.type] }}>
                     {ASSET_TYPES[h.type].label}
                   </span>
