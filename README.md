@@ -5,6 +5,13 @@ ETFs — and to verify that the transactions you make actually reflect in your
 holdings.
 
 - **Consolidated view** with totals, allocation chart and top holdings
+- **Road to ₹5 Cr** goal tracker at the top of the Consolidated page: your
+  **total corpus** (what everything is worth today, profits included) valued day
+  by day against the goal, with the invested line beneath it, continued as a
+  dashed projection that compounds a monthly investment you type in at an assumed
+  return — so you see the year the goal actually lands. Plus a monthly-investment
+  chart and this-month-vs-last-month corpus figures. Change the target with
+  `CORPUS_GOAL` in `src/config.js`
 - **Separate tabs** for Stocks, Mutual Funds and ETFs (with live P&L)
 - **Buying-pattern analysis** on the MF tab: per category (mid/small/large cap…),
   replays your buys as if they had all gone into each fund of that category —
@@ -101,6 +108,33 @@ Holdings can come from several brokers; rows are tinted by platform —
 **INDmoney** (violet), **Groww** (blue), **Axis** (rose), **Coin** (amber) —
 with a legend whose chips also work as a tap-to-filter on the Stocks/MF/ETF
 tabs.
+
+## The ₹5 Cr goal tracker
+
+The goal is tracked on the **total corpus** — the market value of everything you
+hold, profits included. It is valued day by day as `units held on that day × price
+on that day`, using the NAV history the MF tab already downloads (mfapi) and 5
+years of daily closes from Yahoo for stocks/ETFs. Nothing is extrapolated: where a
+held asset's history doesn't reach back far enough, the corpus line simply starts
+later — the card says from when.
+
+The **invested** line (money put in, at cost) runs underneath it over the full
+history, so the gap between the two lines is your profit. Both series end exactly
+on the Total Portfolio card's Current / Invested figures.
+
+Holdings whose broker has no transaction sheet (Axis, Coin), or that no price
+history could be found for, cannot be placed on a timeline, so they are carried as
+a **constant baseline** — the level matches your real portfolio while every
+month-over-month change still comes from a real transaction. The card names the
+amount and the sources when this applies.
+
+The dashed **projection** compounds forward: each month the corpus grows at the
+assumed annual return and your monthly investment lands at month end. Both inputs
+sit on the card — the monthly amount is prefilled with your own 6-month average
+and can be typed over (try ₹1.5L), the return is a 8 / 10 / 12% switch. The ETA,
+and the split of what's left between your contributions and growth, update with
+them. The return is an assumption you dial in; it is never used to value anything
+in the past.
 
 ## Notes
 

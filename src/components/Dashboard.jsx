@@ -13,7 +13,7 @@ import { driveConfigured, pricesConfigured } from '../config.js'
 import { fetchDriveWorkbooks } from '../lib/drive.js'
 import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
-import { fetchQuotes, enrichHoldings } from '../lib/quotes.js'
+import { fetchQuotes, fetchPriceHistory, enrichHoldings } from '../lib/quotes.js'
 import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor, mfKey } from '../lib/navs.js'
 import { withDerivedHoldings } from '../lib/derive.js'
 import { withRecurringSips } from '../lib/monthly.js'
@@ -41,6 +41,9 @@ export default function Dashboard() {
   // Live market prices for stocks/ETFs (Map<symbol, price>); the sheet's stale
   // "Current value" is used as a fallback for anything not resolved here.
   const [priceMap, setPriceMap] = useState(() => new Map())
+  // Daily close history for the same symbols — only the Consolidated goal chart
+  // needs it, to value past holdings on the day they were held.
+  const [priceHistory, setPriceHistory] = useState(() => new Map())
   const [pricesAt, setPricesAt] = useState(null)
   const [pricesBusy, setPricesBusy] = useState(false)
   // Live MF NAVs (Map<schemeCode, { history, latest }>) from mfapi.in; the sheet's
@@ -106,6 +109,8 @@ export default function Dashboard() {
           setPriceMap(map)
           setPricesAt(new Date())
         }
+        const history = await fetchPriceHistory(symbols, { force })
+        if (history.size > 0) setPriceHistory(history)
       } finally {
         setPricesBusy(false)
       }
@@ -224,7 +229,13 @@ export default function Dashboard() {
         <>
           <main className="container">
             {tab === 'consolidated' && (
-              <ConsolidatedTab holdings={view.holdings} transactions={view.transactions} />
+              <ConsolidatedTab
+                holdings={view.holdings}
+                transactions={view.transactions}
+                mfTransactions={view.mfTransactions}
+                navMap={navMap}
+                priceHistory={priceHistory}
+              />
             )}
             {tab === 'monthly' && (
               <MonthlyTab transactions={view.transactions} mfTransactions={view.mfTransactions} />

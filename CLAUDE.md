@@ -86,6 +86,21 @@ recomputed live. **Never fabricate values.**
 - Holdings and orders name the same scrip differently (no ISIN) —
   `reconcile.js` joins on a fuzzy first-two-significant-tokens `nameKey`
   (`mfKey` in navs.js is the more discriminating MF variant).
+- **Goal tracker** (`goal.js` → `GoalTracker`, first card on Consolidated, own
+  section on the mobile Consolidated rail). The goal is on the **total corpus**
+  (market value incl. profits), valued day by day as `units held × price that
+  day` — MF NAV history from `navMap`, stock/ETF daily closes from
+  `fetchPriceHistory` (quotes.js, spark `range=5y&interval=1d`, own 12h
+  localStorage cache). The **invested** (cost) series runs alongside using
+  derive.js's running-average sell accounting. Both endpoints are level-matched
+  per source to the Total Portfolio card's Current / Invested via a **constant
+  baseline offset** (Axis/Coin have no txn sheets; positions with no price
+  history are carried at cost) — level matches, month deltas stay real. Samples
+  are all txn dates + month starts, daily for 6 months back then weekly. The
+  corpus line is **null before every held position is priceable** (`valueFrom`) —
+  never extrapolate across a history gap. `projectToGoal` compounds monthly:
+  `v = v*(1+r) + monthly`, with the monthly amount (seeded from `avg6`) and the
+  return (8/10/12%) chosen in the UI; chart horizon capped at 144 months.
 - Hardcoded ₹10k/month Edelweiss Mid Cap SIP injected via `RECURRING_SIPS` in
   `monthly.js` — it's absent from the MF sheet; a same-day guard prevents
   double counting. The SIP **must have an explicit `start`** (`'2025-05'`,
@@ -96,17 +111,17 @@ recomputed live. **Never fabricate values.**
 
 ## Layout
 - `src/config.js` — Drive/proxy env config, asset-type labels & colors,
-  platform map
-- `src/lib/` — drive, parse, classify, derive (txns → INDmoney holdings),
-  quotes, navs, portfolio, reconcile, monthly, whatif (per-category buy
-  simulation), sourceStyle, format
+  platform map, `CORPUS_GOAL` (₹5 Cr goal target)
+- `src/lib/` — drive, parse, classify, derive (txns → INDmoney holdings), goal
+  (corpus-vs-goal series), quotes, navs, portfolio, reconcile, monthly, whatif
+  (per-category buy simulation), sourceStyle, format
 - `src/components/` — Dashboard (loads data, owns tabs), AppBar, SummaryCard,
   AllocationDonut, HoldingsTable (generic sortable; optional `className` for a
   scrollable variant), AssetTab (optional `foldTo`/`rankOf` props — the MF tab
   passes `foldTo={5}` + a last-buy-recency rank from Dashboard's `mfLastBuy`
   map, so 5 recently-bought funds show up front and "See all" expands to a
-  scrollable table with sticky header), ConsolidatedTab,
-  TransactionsTab, ReconcilePanel, StateViews, SourceLegend, FileDropzone,
+  scrollable table with sticky header), ConsolidatedTab, GoalTracker (goal card
+  + journey/pace SVG charts), TransactionsTab, ReconcilePanel, StateViews, SourceLegend, FileDropzone,
   MfWhatIf (MF-tab buying-pattern analysis: per market-cap category, replays
   the INDmoney buys "all-in" each fund of that category — gain-over-invested
   lines (raw value would hide the differences under the contribution

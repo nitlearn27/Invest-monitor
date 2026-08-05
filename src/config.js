@@ -16,6 +16,10 @@ export const PRICE = {
 
 export const pricesConfigured = () => Boolean(PRICE.proxy)
 
+// Long-term corpus target tracked on the Consolidated page (invested money, at
+// cost — not market value). Change the amount here to re-aim the goal chart.
+export const CORPUS_GOAL = 5e7 // ₹5 crore
+
 // Asset class labels + display order used across the UI.
 export const ASSET_TYPES = {
   stock: { key: 'stock', label: 'Stocks' },

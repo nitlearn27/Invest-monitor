@@ -120,6 +120,101 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
   return result
 }
 
+// --- daily close history (goal tracker) --------------------------------------
+// The same spark endpoint over a 5-year window, so the Consolidated goal chart
+// can value past holdings on the day they were held. Cached separately from the
+// live price (history changes once a day, and it is far bulkier).
+const HISTORY_KEY = 'invest-monitor:price-history:v1'
+const HISTORY_TTL_MS = 12 * 60 * 60 * 1000
+const HISTORY_KEEP = 1300 // ~5 years of trading days
+
+function readHistoryCache() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || {}
+  } catch {
+    return {}
+  }
+}
+
+// Spark entry -> ascending { t: epochMs[], c: close[] }, gaps dropped. The
+// closes sit either directly on the entry or under indicators.quote[0],
+// depending on which response shape the proxy returns.
+function seriesFrom(entry) {
+  const stamps = entry?.timestamp
+  const closes = Array.isArray(entry?.close) ? entry.close : entry?.indicators?.quote?.[0]?.close
+  if (!Array.isArray(stamps) || !Array.isArray(closes)) return null
+  const t = []
+  const c = []
+  for (let i = 0; i < stamps.length; i++) {
+    const px = Number(closes[i])
+    if (!Number.isFinite(px) || px <= 0 || !Number.isFinite(stamps[i])) continue
+    t.push(stamps[i] * 1000)
+    c.push(px)
+  }
+  return t.length ? { t: t.slice(-HISTORY_KEEP), c: c.slice(-HISTORY_KEEP) } : null
+}
+
+async function fetchHistoryChunk(ySymbols) {
+  const url = `${SPARK}?symbols=${ySymbols.join(',')}&range=5y&interval=1d`
+  const res = await fetch(proxied(url))
+  if (!res.ok) throw new Error(`History fetch failed (${res.status})`)
+  const data = await res.json()
+  const out = {}
+  const results = data?.spark?.result
+  if (Array.isArray(results)) {
+    for (const r of results) out[r.symbol] = seriesFrom(r.response?.[0])
+  } else {
+    for (const sym of ySymbols) out[sym] = seriesFrom(data?.[sym])
+  }
+  return out
+}
+
+// Daily close history for the given symbols -> Map<symbol, { t, c }> (ascending).
+// Same contract as fetchQuotes: cached, never throws, partial results are fine —
+// anything unresolved is carried at cost by the goal chart.
+export async function fetchPriceHistory(symbols, { force = false } = {}) {
+  const result = new Map()
+  if (!PRICE.proxy) return result
+
+  const wanted = [...new Set(symbols.map(normalize).filter(Boolean))]
+  const cache = readHistoryCache()
+  const now = Date.now()
+
+  const stale = []
+  for (const sym of wanted) {
+    const hit = cache[sym]
+    if (!force && hit && now - hit.ts < HISTORY_TTL_MS && hit.series?.t?.length) {
+      result.set(sym, hit.series)
+    } else {
+      stale.push(sym)
+    }
+  }
+
+  for (const group of chunk(stale, CHUNK)) {
+    const ySymbols = group.map(yahooSymbol)
+    let series
+    try {
+      series = await fetchHistoryChunk(ySymbols)
+    } catch {
+      continue
+    }
+    group.forEach((sym, i) => {
+      const s = series[ySymbols[i]]
+      if (s) {
+        result.set(sym, s)
+        cache[sym] = { series: s, ts: now }
+      }
+    })
+  }
+
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(cache))
+  } catch {
+    // best-effort (quota) — the history simply refetches next load
+  }
+  return result
+}
+
 // Apply a price map to holdings (pure). Stock/ETF holdings with a resolved price
 // and a qty get a live marketPrice + recomputed current/pnl/pnlPct; everything
 // else (no price, no qty, or MFs) keeps the sheet's current with marketPrice null.

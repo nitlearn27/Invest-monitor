@@ -1,5 +1,6 @@
 // Consolidated overview across stocks, ETFs and mutual funds.
 import PortfolioCard from './PortfolioCard.jsx'
+import GoalTracker from './GoalTracker.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
 import ConsolidatedMobile from './ConsolidatedMobile.jsx'
 import SourceLegend from './SourceLegend.jsx'
@@ -40,7 +41,13 @@ function DonutKpi({ stats }) {
   )
 }
 
-export default function ConsolidatedTab({ holdings }) {
+export default function ConsolidatedTab({
+  holdings,
+  transactions = [],
+  mfTransactions = [],
+  navMap = null,
+  priceHistory = null,
+}) {
   const isMobile = useIsMobile()
   const cards = cardSummaries(holdings)
   const allocation = allocationByClass(holdings)
@@ -57,12 +64,25 @@ export default function ConsolidatedTab({ holdings }) {
         mfClass={mfClass}
         equityAlloc={equityAlloc}
         top={top}
+        holdings={holdings}
+        transactions={transactions}
+        mfTransactions={mfTransactions}
+        navMap={navMap}
+        priceHistory={priceHistory}
       />
     )
   }
 
   return (
     <div className="tab">
+      <GoalTracker
+        holdings={holdings}
+        transactions={transactions}
+        mfTransactions={mfTransactions}
+        navMap={navMap}
+        priceHistory={priceHistory}
+      />
+
       <PortfolioCard title="Total Portfolio" color="#9db4ff" stats={cards.total} featured />
 
       <div className="card-grid">

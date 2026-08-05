@@ -5,6 +5,7 @@
 // identity colour (`--sec`), so navigation embodies the data model.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PortfolioCard from './PortfolioCard.jsx'
+import GoalTracker from './GoalTracker.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
 import SourceLegend from './SourceLegend.jsx'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
@@ -172,11 +173,36 @@ function SectionRail({ sections, active, onChange }) {
   )
 }
 
-export default function ConsolidatedMobile({ cards, allocation, mfClass, equityAlloc, top }) {
-  const [active, setActive] = useState('total')
+export default function ConsolidatedMobile({
+  cards,
+  allocation,
+  mfClass,
+  equityAlloc,
+  top,
+  holdings = [],
+  transactions = [],
+  mfTransactions = [],
+  navMap = null,
+  priceHistory = null,
+}) {
+  const [active, setActive] = useState('goal')
   const maxTop = Math.max(...top.map((h) => h.invested || 0), 1)
 
   const sections = [
+    {
+      key: 'goal',
+      short: 'Goal',
+      color: '#ffbf63',
+      render: () => (
+        <GoalTracker
+          holdings={holdings}
+          transactions={transactions}
+          mfTransactions={mfTransactions}
+          navMap={navMap}
+          priceHistory={priceHistory}
+        />
+      ),
+    },
     {
       key: 'total',
       short: 'Total',
