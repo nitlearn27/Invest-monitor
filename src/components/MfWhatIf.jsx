@@ -1,22 +1,58 @@
 // Buying-pattern analysis for the Mutual Funds tab: per market-cap category,
 // compare the value path of the user's actual INDmoney buys against "what if
-// every one of those buys had gone into <other fund of the category>", plus a
-// NAV-trend view (each fund rebased to 100, buys marked). Data from whatif.js.
+// every one of those buys had gone into <candidate fund of the category>", plus
+// a NAV-trend view (each fund rebased to 100, buys marked). Candidates are the
+// top two funds of the category on INDmoney and on Coin. Data from whatif.js.
 import { useMemo, useRef, useState, useLayoutEffect } from 'react'
-import { whatIfByCategory } from '../lib/whatif.js'
+import { whatIfByCategory, RETURN_WINDOWS } from '../lib/whatif.js'
 import { formatINR, formatINRCompact, formatDate } from '../lib/format.js'
+import { platformOf, platformKeyOf } from '../config.js'
 
-// Series slots (validated for CVD + contrast on the app's dark navy surface).
-// Slot 0 is always "Your buys"; funds take slots 1..3 in a frozen order, the
-// same in both views — color follows the fund, never its rank.
-const SLOTS = ['#5b8cff', '#18a3b8', '#c08618', '#e25663']
+// Series colours (validated for CVD + contrast on the app's dark navy surface).
+// "Your buys" owns the blue; each broker owns a hue pair, indexed by the fund's
+// slot within that broker — so colour follows the fund, never its rank overall.
+// Broker is double-encoded: Coin lines are dashed, INDmoney lines solid.
+const ACTUAL_COLOR = '#5b8cff'
+const FUND_COLORS = {
+  indmoney: ['#18a3b8', '#c9b3ff'],
+  coin: ['#c08618', '#e25663'],
+}
+const DASH = { coin: '5 3' }
 const SURFACE = '#0a1d38' // marker ring / crosshair contrast
 
+const colorOf = (f) => FUND_COLORS[platformKeyOf(f.source)]?.[f.slot] ?? ACTUAL_COLOR
+const dashOf = (f) => DASH[platformKeyOf(f.source)] ?? null
+
+// Drop the plan/option boilerplate every AMFI name carries, then the separators
+// it leaves stranded ("DSP Midcap Fund - Direct Plan - Growth" → "DSP Midcap").
 const shortName = (name) =>
   name
-    .replace(/\b(fund|direct|growth|plan|regular)\b/gi, '')
+    .replace(/\b(fund|direct|regular|growth|plan|option|scheme)\b/gi, ' ')
+    .replace(/[-–—·|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+// Fund label carries its broker — the same scheme can sit on either platform —
+// and flags Regular plan, whose NAV grows ~1%/yr slower purely on commission.
+// Direct is the norm here, so only the exception is called out.
+const planTag = (plan) => (plan === 'Regular' ? ' (Reg)' : '')
+const fundShort = (f) => `${shortName(f.name)}${planTag(f.plan)}`
+const brokerOf = (f) => platformOf(f.source)?.label ?? f.source
+const fundLabel = (f) => `${fundShort(f)} · ${brokerOf(f)}`
+
+// Legend/tooltip/chip swatch: a solid bar, or a dashed one for Coin series.
+function Key({ color, dash }) {
+  return (
+    <span
+      className="whatif__key"
+      style={
+        dash
+          ? { backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 5px, transparent 5px 8px)` }
+          : { background: color }
+      }
+    />
+  )
+}
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -173,6 +209,7 @@ function LineChart({ samples, series, markers = [], yFormat, zeroLine = false })
             fill="none"
             stroke={s.color}
             strokeWidth={2}
+            strokeDasharray={s.dash || undefined}
             strokeLinejoin="round"
             strokeLinecap="round"
           />
@@ -202,7 +239,7 @@ function LineChart({ samples, series, markers = [], yFormat, zeroLine = false })
             (s) =>
               s.values[hover] != null && (
                 <div key={s.name} className="whatif__tooltip-row">
-                  <span className="whatif__key" style={{ background: s.color }} />
+                  <Key color={s.color} dash={s.dash} />
                   <strong>{yFormat(s.values[hover])}</strong>
                   <span>{s.name}</span>
                 </div>
@@ -210,6 +247,115 @@ function LineChart({ samples, series, markers = [], yFormat, zeroLine = false })
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// Per-category returns leaderboard: every fund of the category the user holds
+// anywhere, scored over five trailing windows with the winner of each marked.
+// Consistency across columns is the keep-or-switch signal — a fund that tops
+// one window is noise, a fund that tops four is a decision.
+function ReturnStrip({ rows }) {
+  // Tap a column to rank by it. Best-of-the-longest-window first by default,
+  // which is the order you'd sort into anyway on opening the card.
+  const [sort, setSort] = useState({ key: '1y', dir: 'desc' })
+
+  const best = {}
+  for (const w of RETURN_WINDOWS) {
+    const vals = rows.map((r) => r.returns[w.key]).filter((v) => v != null)
+    if (vals.length > 1) best[w.key] = Math.max(...vals)
+  }
+
+  const sorted = useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1
+    return [...rows].sort((a, b) => {
+      const av = a.returns[sort.key]
+      const bv = b.returns[sort.key]
+      // Funds too young for the window sink to the bottom either way — they
+      // aren't "worst", they're unrated, and floating them to the top of an
+      // ascending sort would read as the opposite.
+      if (av == null || bv == null) return av == null ? (bv == null ? 0 : 1) : -1
+      return (av - bv) * dir
+    })
+  }, [rows, sort])
+
+  const toggle = (key) =>
+    setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
+
+  return (
+    <div className="rstrip">
+      <div className="rstrip__row rstrip__head">
+        <span className="rstrip__name">Fund</span>
+        {RETURN_WINDOWS.map((w) => {
+          const active = sort.key === w.key
+          return (
+            <button
+              key={w.key}
+              type="button"
+              className={`rstrip__sort${active ? ' rstrip__sort--active' : ''}`}
+              aria-label={`Sort by ${w.label} return, ${active && sort.dir === 'desc' ? 'lowest' : 'highest'} first`}
+              onClick={() => toggle(w.key)}
+            >
+              {w.label}
+              <span className="rstrip__arrow">{active && sort.dir === 'asc' ? '▲' : '▼'}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="rstrip__body">
+        {sorted.map((r) => (
+          <div key={r.code} className="rstrip__row">
+            <span className="rstrip__name" title={r.name}>
+              {r.charted ? (
+                <Key
+                  color={colorOf({ source: r.chartSource, slot: r.slot })}
+                  dash={dashOf({ source: r.chartSource })}
+                />
+              ) : (
+                <span className="rstrip__off" />
+              )}
+              <span className="rstrip__fund">
+                {shortName(r.name)}
+                {r.plan === 'Regular' && <span className="rstrip__plan">Reg</span>}
+              </span>
+              <span className="rstrip__brokers">
+                {r.sources.map((s) => (
+                  <span
+                    key={s}
+                    className="rstrip__broker"
+                    style={{ background: platformOf(s)?.color }}
+                    title={platformOf(s)?.label ?? s}
+                  />
+                ))}
+              </span>
+            </span>
+            {RETURN_WINDOWS.map((w) => {
+              const v = r.returns[w.key]
+              if (v == null) {
+                return (
+                  <span key={w.key} className="rstrip__val rstrip__val--none">
+                    –
+                  </span>
+                )
+              }
+              const isBest = best[w.key] != null && v === best[w.key]
+              return (
+                <span
+                  key={w.key}
+                  className={`rstrip__val ${v >= 0 ? 'pos' : 'neg'}${isBest ? ' rstrip__val--best' : ''}`}
+                >
+                  {(v * 100).toFixed(1)}
+                </span>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div className="rstrip__note">
+        Tap a column to sort · % return · 3Y annualised · Reg = Regular plan (higher fees)
+      </div>
     </div>
   )
 }
@@ -252,16 +398,35 @@ function CategoryCard({ cat, cutoff }) {
   // scenario lines become indistinguishable (verified on real data).
   const gains = (vals) => vals.map((v, i) => v - win.invested[i])
   const valueSeries = [
-    { name: 'Your buys', color: SLOTS[0], values: gains(win.actual) },
-    ...win.alts.map((a, i) => ({ name: `All-in ${shortName(a.name)}`, color: SLOTS[i + 1], values: gains(a.values) })),
+    { name: 'Your buys', label: 'Your buys', color: ACTUAL_COLOR, values: gains(win.actual) },
+    ...win.alts.map((a) => ({
+      name: `All-in ${fundLabel(a)}`,
+      label: `All-in ${fundShort(a)}`,
+      broker: brokerOf(a),
+      color: colorOf(a),
+      dash: dashOf(a),
+      values: gains(a.values),
+    })),
   ]
-  const navSeries = win.nav.map((n, i) => ({ name: shortName(n.name), color: SLOTS[i + 1], values: n.values }))
-  const navMarkers = win.nav.flatMap((n, i) => n.buys.map((b) => ({ ...b, color: SLOTS[i + 1] })))
+  const navSeries = win.nav.map((n) => ({
+    name: fundLabel(n),
+    label: fundShort(n),
+    broker: brokerOf(n),
+    color: colorOf(n),
+    dash: dashOf(n),
+    values: n.values,
+  }))
+  const navMarkers = win.nav.flatMap((n) => n.buys.map((b) => ({ ...b, color: colorOf(n) })))
 
   const gain = (v) => (v - win.invested[last]) / win.invested[last]
   const scenarios = [
-    { name: 'Your buys', color: SLOTS[0], final: win.actual[last] },
-    ...win.alts.map((a, i) => ({ name: `All-in ${shortName(a.name)}`, color: SLOTS[i + 1], final: a.values[last] })),
+    { name: 'Your buys', color: ACTUAL_COLOR, final: win.actual[last] },
+    ...win.alts.map((a) => ({
+      name: `All-in ${fundLabel(a)}`,
+      color: colorOf(a),
+      dash: dashOf(a),
+      final: a.values[last],
+    })),
   ]
   const best = Math.max(...scenarios.map((s) => s.final))
 
@@ -273,7 +438,9 @@ function CategoryCard({ cat, cutoff }) {
           <div className="whatif__sub">
             {formatINR(cat.investedTotal)} across {cat.txnCount} buys
             {cat.excluded > 0 && ` · ${cat.excluded} older buy${cat.excluded > 1 ? 's' : ''} excluded (no NAV history)`}
-            {single && ' · only fund in this category — nothing to compare'}
+            {cat.unchartedActual.length > 0 &&
+              ` · "Your buys" also includes ${cat.unchartedActual.map(shortName).join(', ')}`}
+            {single && ' · only one fund to compare in this category'}
           </div>
         </div>
         {!single && (
@@ -290,12 +457,15 @@ function CategoryCard({ cat, cutoff }) {
 
       <div className="whatif__legend">
         {(mode === 'value' ? valueSeries : navSeries).map((s) => (
-          <span key={s.name} className="whatif__legend-item">
-            <span className="whatif__key" style={{ background: s.color }} />
-            {s.name}
+          <span key={s.name} className="whatif__legend-item" title={s.name}>
+            <Key color={s.color} dash={s.dash} />
+            {s.label}
+            {/* Broker is already carried by the dash pattern — on phones the
+                suffix only costs a line, so it drops out below 640px. */}
+            {s.broker && <span className="whatif__legend-src">· {s.broker}</span>}
           </span>
         ))}
-        {mode === 'nav' && (
+        {mode === 'nav' && navMarkers.length > 0 && (
           <span className="whatif__legend-item">
             <span className="whatif__dot" />
             your buys
@@ -314,11 +484,13 @@ function CategoryCard({ cat, cutoff }) {
         />
       )}
 
+      {mode === 'nav' && cat.returnRows.length > 0 && <ReturnStrip rows={cat.returnRows} />}
+
       {mode === 'value' && (
         <div className="whatif__chips">
           {scenarios.map((s) => (
             <div key={s.name} className={`whatif__chip${s.final === best ? ' whatif__chip--best' : ''}`}>
-              <span className="whatif__key" style={{ background: s.color }} />
+              <Key color={s.color} dash={s.dash} />
               <span className="whatif__chip-name">{s.name}</span>
               <strong>{formatINRCompact(s.final)}</strong>
               <span className={gain(s.final) >= 0 ? 'pos' : 'neg'}>
@@ -333,8 +505,11 @@ function CategoryCard({ cat, cutoff }) {
   )
 }
 
-export default function MfWhatIf({ mfTransactions = [], navMap }) {
-  const cats = useMemo(() => whatIfByCategory(mfTransactions, navMap), [mfTransactions, navMap])
+export default function MfWhatIf({ mfTransactions = [], holdings = [], navMap }) {
+  const cats = useMemo(
+    () => whatIfByCategory(mfTransactions, navMap, holdings),
+    [mfTransactions, navMap, holdings],
+  )
   const [range, setRange] = useState('6m')
   const [now] = useState(() => Date.now())
   if (!cats.length) return null
@@ -345,12 +520,7 @@ export default function MfWhatIf({ mfTransactions = [], navMap }) {
   return (
     <section className="whatif">
       <h2 className="section-title">Buying-pattern analysis</h2>
-      <p className="whatif__intro">
-        Each category shows the NAV trend of your funds (rebased to 100, dots mark your buys) — the
-        prices your decisions were made against. Switch to What-if gain to replay your INDmoney
-        buys as if every one had gone into a single fund of that category, and see whether the fund
-        you picked was the right call.
-      </p>
+      <p className="whatif__intro">Which fund is actually winning, per category.</p>
       <div className="whatif__filters">
         <div className="segmented segmented--sm" role="group" aria-label="Time range">
           {RANGES.map((r) => (

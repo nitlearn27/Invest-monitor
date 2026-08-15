@@ -38,6 +38,8 @@ export default function Dashboard() {
   const [source, setSource] = useState(() => (boot?.dataset ? { kind: 'cache', label: '⚡ Cached' } : null))
   const [lastUpdated, setLastUpdated] = useState(() => (boot?.cachedAt ? new Date(boot.cachedAt) : null))
   const [tab, setTab] = useState('consolidated')
+  // Deep link from the goal card's "this month" tiles into the Monthly tab.
+  const [monthFocus, setMonthFocus] = useState(null)
   // Live market prices for stocks/ETFs (Map<symbol, price>); the sheet's stale
   // "Current value" is used as a fallback for anything not resolved here.
   const [priceMap, setPriceMap] = useState(() => new Map())
@@ -235,10 +237,18 @@ export default function Dashboard() {
                 mfTransactions={view.mfTransactions}
                 navMap={navMap}
                 priceHistory={priceHistory}
+                onOpenMonth={(month) => {
+                  setMonthFocus(month)
+                  setTab('monthly')
+                }}
               />
             )}
             {tab === 'monthly' && (
-              <MonthlyTab transactions={view.transactions} mfTransactions={view.mfTransactions} />
+              <MonthlyTab
+                transactions={view.transactions}
+                mfTransactions={view.mfTransactions}
+                focusMonth={monthFocus}
+              />
             )}
             {tab === 'stock' && <AssetTab type="stock" label="Stocks" holdings={view.holdings} />}
             {tab === 'mf' && (
@@ -250,7 +260,11 @@ export default function Dashboard() {
                   foldTo={5}
                   rankOf={(h) => mfLastBuy.get(mfKey(h.name)) ?? 0}
                 />
-                <MfWhatIf mfTransactions={view.mfTransactions} navMap={navMap} />
+                <MfWhatIf
+                  mfTransactions={view.mfTransactions}
+                  holdings={view.holdings}
+                  navMap={navMap}
+                />
               </>
             )}
             {tab === 'etf' && <AssetTab type="etf" label="ETFs" holdings={view.holdings} />}

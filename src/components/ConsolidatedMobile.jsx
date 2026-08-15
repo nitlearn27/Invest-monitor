@@ -184,6 +184,7 @@ export default function ConsolidatedMobile({
   mfTransactions = [],
   navMap = null,
   priceHistory = null,
+  onOpenMonth = null,
 }) {
   const [active, setActive] = useState('goal')
   const maxTop = Math.max(...top.map((h) => h.invested || 0), 1)
@@ -200,6 +201,7 @@ export default function ConsolidatedMobile({
           mfTransactions={mfTransactions}
           navMap={navMap}
           priceHistory={priceHistory}
+          onOpenMonth={onOpenMonth}
         />
       ),
     },

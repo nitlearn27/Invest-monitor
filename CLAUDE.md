@@ -100,7 +100,27 @@ recomputed live. **Never fabricate values.**
   corpus line is **null before every held position is priceable** (`valueFrom`) —
   never extrapolate across a history gap. `projectToGoal` compounds monthly:
   `v = v*(1+r) + monthly`, with the monthly amount (seeded from `avg6`) and the
-  return (8/10/12%) chosen in the UI; chart horizon capped at 144 months.
+  return (8/10/12%) chosen in the UI (behind the ETA band's summary chip, not
+  always-on); chart horizon capped at 144 months.
+- **This-month detail** (`goalProgress().detail` → `ReturnSheet`). The pulse
+  tiles under the progress bar are tappable: the two money tiles deep-link to
+  the **Monthly tab** at that month (`onOpenMonth` — Dashboard → Consolidated →
+  GoalTracker; MonthlyTab seeds `selectedMonth` from `focusMonth` and unmounts
+  on every tab switch, so seeding is enough), and "Markets gave" opens
+  ReturnSheet — the month as a waterfall (corpus on the 1st + added + market =
+  today), split by asset class and by position. Per-position levels come off the
+  timeline only, so the constant baseline offset is reported separately as
+  `detail.untracked`; it never moves, so class markets sum to `growth.market`
+  exactly. `detail` is null unless the corpus line already existed at the
+  opening sample (`openIdx >= valueFrom`).
+  Holdings from `baselineSources` (Axis/Coin — no txn sheet) would therefore
+  never move: `estimateMonthMovers` prices them **for the current month only**,
+  units assumed unchanged, level-scaled off the holding's live `current`
+  (`open = current × nav_1st/nav_now`). They join `detail.movers` tagged
+  `estimated:true` and are **excluded** from `market`/`classes` (which must keep
+  tying to the corpus series) — the sheet states the combined figure in words.
+  A baseline holding with no NAV/price match lands in `detail.unpriced` and the
+  sheet names it, so an unmapped fund is visible instead of silently missing.
 - Hardcoded ₹10k/month Edelweiss Mid Cap SIP injected via `RECURRING_SIPS` in
   `monthly.js` — it's absent from the MF sheet; a same-day guard prevents
   double counting. The SIP **must have an explicit `start`** (`'2025-05'`,
@@ -121,18 +141,54 @@ recomputed live. **Never fabricate values.**
   passes `foldTo={5}` + a last-buy-recency rank from Dashboard's `mfLastBuy`
   map, so 5 recently-bought funds show up front and "See all" expands to a
   scrollable table with sticky header), ConsolidatedTab, GoalTracker (goal card
-  + journey/pace SVG charts), TransactionsTab, ReconcilePanel, StateViews, SourceLegend, FileDropzone,
+  + journey/pace SVG charts + pulse tiles with their own micro-charts; card
+  chrome is dropped at ≤640px so the charts span the device), ReturnSheet
+  (this-month return breakdown; portalled to `<body>` — the `.card`
+  backdrop-filter would otherwise contain `position:fixed`),
+  TransactionsTab, ReconcilePanel, StateViews, SourceLegend, FileDropzone,
   MfWhatIf (MF-tab buying-pattern analysis: per market-cap category, replays
-  the INDmoney buys "all-in" each fund of that category — gain-over-invested
-  lines (raw value would hide the differences under the contribution
-  staircase) + a NAV-trend view rebased to 100 with buy markers (the
-  **default** view); hand-rolled SVG with crosshair/tooltip; one trailing
-  time-range control (1M/3M/6M/1Y/All, default 6M) above the cards scopes
-  every chart — NAV series re-rebase to the window start; the whatif.js sample
-  grid is denser near today (daily ≤30d, 3-day ≤90d, else weekly) so short
-  windows stay smooth, and x-ticks are picked evenly in time then snapped to
-  samples; series colours CVD-validated for the navy surface; txns older than
-  the trimmed NAV history are excluded per category)
+  the INDmoney buys "all-in" each **candidate** fund of that category —
+  gain-over-invested lines (raw value would hide the differences under the
+  contribution staircase) + a NAV-trend view rebased to 100 with buy markers
+  (the **default** view). Candidates = top `PICKS_PER_SOURCE` (2) funds of the
+  category from **two brokers**: INDmoney (by amount transacted) and Coin (by
+  the holdings snapshot's `invested`), deduped by AMFI scheme code — Coin has
+  no txn sheet, so its funds are comparison-only, carry no buy markers, and
+  never enter the "Your buys" line; a category with no priceable INDmoney buy
+  has no cashflows and so no card. Broker is double-encoded — INDmoney solid,
+  Coin dashed — and each broker owns a colour pair indexed by the fund's `slot`
+  within it. "Your buys" is valued from **every** INDmoney fund of the
+  category, not just the two charted (uncharted ones are named in the card
+  subtitle). `histStart` comes from the INDmoney picks alone and a Coin
+  candidate whose NAV history starts later is **skipped** rather than charted —
+  otherwise one recently-launched fund truncates every line, or empties the
+  category and deletes the card. Under the NAV trend sits `ReturnStrip`: a
+  leaderboard of **every** MF of that category the user holds on **any** broker
+  (`returnRows`, deduped by scheme code so one row can carry several broker
+  dots; Direct/Regular are distinct codes ⇒ distinct rows), scored over
+  `RETURN_WINDOWS` (1M/3M/6M/1Y/3Y, 3Y annualised so every column stays on one
+  scale) with the winner of each column pilled in the **accent**, not green —
+  green/red already mean gain/loss, so reusing them for "best" blurs both.
+  Consistency across columns is the keep-or-switch signal the what-if chart
+  can't give. Column headers are sort buttons (default 1Y desc; unrated funds
+  sink in both directions). Cells carry no `%` or `+` — the unit is stated once
+  in the caption and gain/loss is the colour; the minus on negatives stays,
+  since a bare red number is indistinguishable in greyscale or CVD.
+  ≤640px the name moves onto its own line above its numbers and **every** row
+  gets a tinted block with a gap — zebra striping on a two-line row floats
+  alternate funds apart instead of binding each name to its own figures.
+  `periodReturn`
+  returns null unless the trimmed history actually reaches back (navOn would
+  otherwise clamp to the oldest entry and report a short window as a full one).
+  Regular-plan funds carry a "Reg" tag in the strip and "(Reg)" in chart labels
+  — their NAV grows ~1%/yr slower on commission alone, so an untagged
+  comparison is unfair. Hand-rolled SVG with crosshair/tooltip; one time-range
+  control (1M/3M/6M/1Y/All, default 6M) above the cards scopes every chart —
+  NAV series re-rebase to the window start; the whatif.js sample grid is
+  denser near today (daily ≤30d, 3-day ≤90d, else weekly) so short windows
+  stay smooth, and x-ticks are picked evenly in time then snapped to samples;
+  series colours CVD-validated for the navy surface; txns older than any
+  charted fund's trimmed NAV history are excluded per category)
 - `proxy/` — Yahoo CORS Worker · `scripts/` — build-mf-schemes.mjs, stamp-sw.mjs
 - `resources/` — gitignored personal exports, EXCEPT `mf-schemes.json` and
   `name-symbols.json` (explicitly un-ignored; imported at build time)

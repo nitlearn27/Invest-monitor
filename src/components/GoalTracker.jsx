@@ -4,8 +4,15 @@
 // valued day by day on a goal-scaled axis, continued as a dashed projection that
 // compounds your monthly investment at an assumed return) and the monthly
 // investment pace. Data from lib/goal.js; hand-rolled SVG like MfWhatIf.
+//
+// Reading order is deliberate: where you stand → what moved this month → the
+// journey chart → the ETA (with the plan behind a disclosure, since it's a
+// dial you set once, not a daily read) → the monthly pace. Sections are split
+// by hairlines rather than nested boxes so the charts get the full width —
+// on mobile the card chrome is dropped entirely (see App.css).
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { goalProgress, projectToGoal } from '../lib/goal.js'
+import ReturnSheet from './ReturnSheet.jsx'
 import { CORPUS_GOAL } from '../config.js'
 import { formatINR, formatINRCompact, formatPct, formatDate } from '../lib/format.js'
 
@@ -32,13 +39,101 @@ function useWidth(ref) {
 const yearLabel = (t) => new Date(t).toLocaleString('en-IN', { month: 'short', year: '2-digit' }).replace(' ', " '")
 const monthYear = (d) => d.toLocaleString('en-IN', { month: 'short', year: 'numeric' })
 
+// ---- pulse-tile micro-visuals -------------------------------------------
+// Each tile carries a small chart of its own number's history, so the three
+// figures read as a picture of the month rather than three lines of text.
+
+// Filled sparkline of the recent corpus, min–max scaled so the shape of the
+// last few weeks is visible even when the move is 1% of the total.
+function Spark({ values, color, height = 38 }) {
+  const wrapRef = useRef(null)
+  const width = useWidth(wrapRef)
+  if (values.length < 2) return <div ref={wrapRef} className="gpulse__viz" style={{ height }} />
+
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  const x = (i) => (i / (values.length - 1)) * width
+  const y = (v) => 3 + (1 - (v - min) / span) * (height - 8)
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')
+
+  return (
+    <div ref={wrapRef} className="gpulse__viz" style={{ height }}>
+      <svg width={width} height={height} aria-hidden="true">
+        <defs>
+          <linearGradient id="gpulse-spark" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.5" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={`${line}L${width},${height}L0,${height}Z`} fill="url(#gpulse-spark)" />
+        <path d={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
+        <circle cx={width} cy={y(values[values.length - 1])} r="2.8" fill={color} />
+      </svg>
+    </div>
+  )
+}
+
+// The last few months of contributions; the current month is the bright one.
+function MiniBars({ values, color, height = 38 }) {
+  const wrapRef = useRef(null)
+  const width = useWidth(wrapRef)
+  const max = Math.max(...values.map(Math.abs), 1)
+  const slot = width / Math.max(values.length, 1)
+  const barW = Math.max(4, Math.min(16, slot * 0.55))
+
+  return (
+    <div ref={wrapRef} className="gpulse__viz" style={{ height }}>
+      <svg width={width} height={height} aria-hidden="true">
+        {values.map((v, i) => {
+          const h = Math.max(2, (Math.abs(v) / max) * (height - 6))
+          return (
+            <rect
+              key={i}
+              x={slot * (i + 0.5) - barW / 2}
+              y={height - h}
+              width={barW}
+              height={h}
+              rx={2}
+              fill={color}
+              opacity={i === values.length - 1 ? 1 : 0.32}
+            />
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
+// This month's growth split into the part you paid for and the part the market
+// handed over — the one visual that makes "markets gave" mean something.
+function SplitBar({ added, market, height = 38 }) {
+  const total = Math.abs(added) + Math.abs(market) || 1
+  const pct = (v) => `${(Math.abs(v) / total) * 100}%`
+  return (
+    <div className="gpulse__viz gpulse__viz--split" style={{ height }}>
+      <div className="gpulse__split">
+        <span className="gpulse__split-seg gpulse__split-seg--you" style={{ width: pct(added) }} />
+        <span
+          className={`gpulse__split-seg gpulse__split-seg--${market >= 0 ? 'mkt' : 'loss'}`}
+          style={{ width: pct(market) }}
+        />
+      </div>
+      <div className="gpulse__split-key">
+        <span>you {Math.round((Math.abs(added) / total) * 100)}%</span>
+        <span>market {Math.round((Math.abs(market) / total) * 100)}%</span>
+      </div>
+    </div>
+  )
+}
+
 // Journey chart: corpus (filled) and invested (thin line) on a y-axis that
 // always spans the whole goal — the gap left to close is the subject, not the
 // recent wiggle — continuing as the dashed compounded projection.
 function JourneyChart({ g, projection }) {
   const wrapRef = useRef(null)
   const width = useWidth(wrapRef)
-  const height = width < 480 ? 210 : 260
+  const height = width < 480 ? 250 : 300
   const [hover, setHover] = useState(null)
 
   const pad = { l: 8, r: 12, t: 12, b: 22 }
@@ -225,58 +320,76 @@ function JourneyChart({ g, projection }) {
 function PaceChart({ months, avg }) {
   const wrapRef = useRef(null)
   const width = useWidth(wrapRef)
-  const height = 150
-  const pad = { l: 4, r: 4, t: 14, b: 20 }
+  const height = 190
+  const pad = { l: 4, r: 4, t: 22, b: 22 }
+  const [hover, setHover] = useState(null)
 
   const shown = months.slice(-MONTH_BARS)
   const max = Math.max(...shown.map((m) => Math.abs(m.added)), avg, 1)
   const plotH = height - pad.t - pad.b
   const slot = (width - pad.l - pad.r) / shown.length
-  const barW = Math.max(6, Math.min(30, slot * 0.62))
+  const barW = Math.max(8, Math.min(38, slot * 0.66))
   const y0 = pad.t + plotH
+  const avgY = y0 - (avg / max) * plotH
+
+  // Every bar carries its own value on top: no hunting in a tooltip, and the
+  // "am I ahead of my usual month?" read is the bar against the average line.
+  const labelEvery = slot < 34 ? 2 : 1
 
   return (
-    <div ref={wrapRef} className="gtrack__chart">
+    <div ref={wrapRef} className="gtrack__chart" onPointerLeave={() => setHover(null)}>
       <svg width={width} height={height}>
+        <defs>
+          <linearGradient id="gtrack-bar" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={CORPUS} stopOpacity="1" />
+            <stop offset="100%" stopColor={CORPUS} stopOpacity="0.35" />
+          </linearGradient>
+        </defs>
+        {avg > 0 && (
+          <>
+            <line x1={pad.l} x2={width - pad.r} y1={avgY} y2={avgY} className="gtrack__avgline" />
+            <text x={width - pad.r} y={avgY - 5} textAnchor="end" className="gtrack__avglabel">
+              6-mo avg {formatINRCompact(avg)}
+            </text>
+          </>
+        )}
         {shown.map((m, i) => {
-          const h = Math.max(1, (Math.abs(m.added) / max) * plotH)
+          const h = Math.max(2, (Math.abs(m.added) / max) * plotH)
           const cx = pad.l + slot * (i + 0.5)
           const last = i === shown.length - 1
+          const on = hover === i || (hover == null && last)
           return (
-            <g key={m.month}>
+            <g key={m.month} onPointerEnter={() => setHover(i)}>
+              <rect x={cx - slot / 2} y={pad.t} width={slot} height={plotH} fill="transparent" />
               <rect
                 x={cx - barW / 2}
                 y={y0 - h}
                 width={barW}
                 height={h}
-                rx={3}
-                fill={m.added < 0 ? 'var(--neg)' : CORPUS}
-                opacity={last ? 1 : 0.45}
+                rx={4}
+                fill={m.added < 0 ? 'var(--neg)' : 'url(#gtrack-bar)'}
+                opacity={on ? 1 : 0.5}
               >
                 <title>{`${m.label}: ${formatINR(m.added)}`}</title>
               </rect>
-              {(shown.length - 1 - i) % 2 === 0 && (
-                <text x={cx} y={height - 6} textAnchor="middle" className="gtrack__tick">
+              {(shown.length - 1 - i) % labelEvery === 0 && (
+                <text
+                  x={cx}
+                  y={height - 6}
+                  textAnchor="middle"
+                  className={on ? 'gtrack__tick gtrack__tick--on' : 'gtrack__tick'}
+                >
                   {m.label.split(' ')[0]}
                 </text>
               )}
-              {last && (
-                <text x={cx} y={y0 - h - 5} textAnchor="middle" className="gtrack__barval">
+              {on && (
+                <text x={cx} y={y0 - h - 7} textAnchor="middle" className="gtrack__barval">
                   {formatINRCompact(m.added)}
                 </text>
               )}
             </g>
           )
         })}
-        {avg > 0 && (
-          <line
-            x1={pad.l}
-            x2={width - pad.r}
-            y1={y0 - (avg / max) * plotH}
-            y2={y0 - (avg / max) * plotH}
-            className="gtrack__avgline"
-          />
-        )}
         <line x1={pad.l} x2={width - pad.r} y1={y0} y2={y0} className="gtrack__grid" />
       </svg>
     </div>
@@ -290,6 +403,7 @@ export default function GoalTracker({
   navMap = null,
   priceHistory = null,
   goal = CORPUS_GOAL,
+  onOpenMonth = null,
 }) {
   const g = useMemo(
     () => goalProgress({ transactions, mfTransactions, holdings, navMap, priceHistory, goal }),
@@ -299,6 +413,8 @@ export default function GoalTracker({
   // your own 6-month pace) and the return you assume it earns.
   const [planned, setPlanned] = useState(null)
   const [rate, setRate] = useState(0.1)
+  const [planOpen, setPlanOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const monthly = planned ?? (g ? Math.round(g.avg6 / 1000) * 1000 : 0)
   const projection = useMemo(
@@ -310,146 +426,200 @@ export default function GoalTracker({
   const { thisMonth, lastMonth, growth } = g
   const step = g.goal / 5
   const gainPos = g.gain >= 0
+  const atPace = Math.round(g.avg6 / 1000) * 1000
+
+  // What moved since last month — the daily-visit read. Each figure carries its
+  // own micro-chart and opens the detail behind it: the two money-in tiles jump
+  // to the Monthly tab, the market tile opens the return breakdown.
+  const signed = (v) => `${v >= 0 ? '▲' : '▼'} ${formatINR(Math.round(Math.abs(v)))}`
+  const sparkValues = (g.value || []).slice(-70).filter((v) => v != null)
+  const paceValues = g.months.slice(-6).map((m) => m.added)
+  const pulse = [
+    growth && {
+      key: 'corpus',
+      label: 'Corpus this month',
+      value: signed(growth.total),
+      tone: growth.total >= 0 ? 'pos' : 'neg',
+      foot: `from ${formatINRCompact(growth.from)} at the end of ${lastMonth.label}`,
+      viz: sparkValues.length > 1 ? <Spark values={sparkValues} color={CORPUS} /> : null,
+      action: onOpenMonth && { label: 'Monthly', run: () => onOpenMonth(thisMonth.month) },
+    },
+    {
+      key: 'added',
+      label: `You put in · ${thisMonth.label}`,
+      value: formatINR(Math.round(thisMonth.added)),
+      foot: `${formatINRCompact(g.avg6)} a month on your 6-month pace`,
+      viz: paceValues.length > 1 ? <MiniBars values={paceValues} color={INVESTED} /> : null,
+      action: onOpenMonth && { label: 'Monthly', run: () => onOpenMonth(thisMonth.month) },
+    },
+    growth && {
+      key: 'market',
+      label: 'Markets gave',
+      value: signed(growth.market),
+      tone: growth.market >= 0 ? 'pos' : 'neg',
+      foot:
+        g.detail?.returnPct != null
+          ? `${g.detail.returnPct >= 0 ? '+' : ''}${g.detail.returnPct.toFixed(2)}% on what you were holding`
+          : 'growth on what you already hold',
+      viz: <SplitBar added={growth.added} market={growth.market} />,
+      action: g.detail && { label: 'Breakdown', run: () => setSheetOpen(true) },
+    },
+  ].filter(Boolean)
 
   return (
     <div className="card gtrack">
       {/* Invested is the headline — it's the number the user acts on. The corpus
           sits below it, since that's what the goal is measured against. */}
-      <div className="gtrack__hero">
-        <span className="gtrack__now">{formatINR(Math.round(g.currentInvested))}</span>
-        <span className="gtrack__now-label">invested</span>
-        <span className={`gtrack__gain ${gainPos ? 'pos' : 'neg'}`}>
-          {gainPos ? '▲' : '▼'} {formatINR(Math.round(Math.abs(g.gain)))}
-          <span className="gtrack__gain-pct">{formatPct(g.gainPct)}</span>
-        </span>
-      </div>
-      <div className="gtrack__split">
-        <span className="gtrack__split-item">
-          <span className="gtrack__key" style={{ '--k': CORPUS }} />
-          Corpus <strong>{formatINR(Math.round(g.currentValue))}</strong>
-        </span>
-        <span className="gtrack__split-item gtrack__pct">
-          {g.pct.toFixed(1)}% of {formatINRCompact(g.goal)}
-        </span>
-        <span className="gtrack__split-item">{formatINRCompact(g.remaining)} to go</span>
-      </div>
-
-      <div className="gtrack__bar" role="img" aria-label={`${g.pct.toFixed(1)} percent of the goal reached`}>
-        <div className="gtrack__bar-fill" style={{ width: `${g.pct}%` }} />
-        {[1, 2, 3, 4].map((i) => (
-          <span key={i} className="gtrack__tickmark" style={{ left: `${i * 20}%` }}>
-            <span className="gtrack__tickmark-label">{formatINRCompact(step * i)}</span>
+      <div className="gtrack__top">
+        <div className="gtrack__hero">
+          <span className="gtrack__now">{formatINR(Math.round(g.currentInvested))}</span>
+          <span className="gtrack__now-label">invested</span>
+          <span className={`gtrack__gain ${gainPos ? 'pos' : 'neg'}`}>
+            {gainPos ? '▲' : '▼'} {formatINR(Math.round(Math.abs(g.gain)))}
+            <span className="gtrack__gain-pct">{formatPct(g.gainPct)}</span>
           </span>
-        ))}
+        </div>
+        <div className="gtrack__split">
+          <span className="gtrack__split-item">
+            <span className="gtrack__key" style={{ '--k': CORPUS }} />
+            Corpus <strong>{formatINR(Math.round(g.currentValue))}</strong>
+          </span>
+          <span className="gtrack__split-item gtrack__pct">
+            {g.pct.toFixed(1)}% of {formatINRCompact(g.goal)}
+          </span>
+          <span className="gtrack__split-item">{formatINRCompact(g.remaining)} to go</span>
+        </div>
+
+        <div className="gtrack__bar" role="img" aria-label={`${g.pct.toFixed(1)} percent of the goal reached`}>
+          <div className="gtrack__bar-fill" style={{ width: `${g.pct}%` }}>
+            <span className="gtrack__bar-knob" />
+          </div>
+          {[1, 2, 3, 4].map((i) => (
+            <span key={i} className="gtrack__tickmark" style={{ left: `${i * 20}%` }}>
+              <span className="gtrack__tickmark-label">{formatINRCompact(step * i)}</span>
+            </span>
+          ))}
+        </div>
       </div>
 
-      <div className="gtrack__kpis">
-        {lastMonth?.valueEnd != null && (
-          <div className="gtrack__kpi">
-            <span className="gtrack__kpi-label">Corpus end of {lastMonth.label}</span>
-            <span className="gtrack__kpi-val">{formatINR(Math.round(lastMonth.valueEnd))}</span>
-          </div>
-        )}
-        {growth && (
-          <div className="gtrack__kpi">
-            <span className="gtrack__kpi-label">Corpus grew this month</span>
-            <span className={`gtrack__kpi-val ${growth.total >= 0 ? 'pos' : 'neg'}`}>
-              {growth.total >= 0 ? '▲' : '▼'} {formatINR(Math.round(Math.abs(growth.total)))}
-              <span className="gtrack__kpi-sub">
-                {' '}
-                {formatINRCompact(growth.added)} in · {formatINRCompact(growth.market)} market
+      <div className="gtrack__pulse">
+        {pulse.map((p) => {
+          const Tag = p.action ? 'button' : 'div'
+          return (
+            <Tag
+              key={p.key}
+              className={`gpulse gpulse--${p.key}`}
+              {...(p.action ? { type: 'button', onClick: p.action.run } : {})}
+            >
+              <span className="gpulse__top">
+                <span className="gpulse__label">{p.label}</span>
+                {p.action && <span className="gpulse__go">{p.action.label}</span>}
               </span>
+              <span className={`gpulse__val ${p.tone || ''}`}>{p.value}</span>
+              {p.viz}
+              <span className="gpulse__foot">{p.foot}</span>
+            </Tag>
+          )
+        })}
+      </div>
+
+      <section className="gtrack__section">
+        <div className="gtrack__section-head">
+          <h4 className="gtrack__section-title">Journey to {formatINRCompact(g.goal)}</h4>
+          <div className="gtrack__legend">
+            <span className="gtrack__legend-item">
+              <span className="gtrack__key" style={{ '--k': CORPUS }} /> corpus
+            </span>
+            <span className="gtrack__legend-item">
+              <span className="gtrack__key" style={{ '--k': INVESTED }} /> invested
+            </span>
+            {projection && (
+              <span className="gtrack__legend-item">
+                <span className="gtrack__key gtrack__key--dash" style={{ '--k': PROJECTED }} /> projected
+              </span>
+            )}
+            <span className="gtrack__legend-item">
+              <span className="gtrack__key" style={{ '--k': GOAL_C }} /> goal
             </span>
           </div>
-        )}
-        <div className="gtrack__kpi">
-          <span className="gtrack__kpi-label">Invested this month · {thisMonth.label}</span>
-          <span className="gtrack__kpi-val">{formatINR(Math.round(thisMonth.added))}</span>
         </div>
-        {lastMonth && (
-          <div className="gtrack__kpi">
-            <span className="gtrack__kpi-label">Invested last month · {lastMonth.label}</span>
-            <span className="gtrack__kpi-val">{formatINR(Math.round(lastMonth.added))}</span>
-          </div>
-        )}
-        <div className="gtrack__kpi">
-          <span className="gtrack__kpi-label">Avg invested · 6 mo</span>
-          <span className="gtrack__kpi-val">{formatINR(Math.round(g.avg6))}</span>
-        </div>
-      </div>
+        <JourneyChart g={g} projection={projection} />
+      </section>
 
-      <div className="gtrack__plan">
-        <label className="gtrack__plan-field">
-          <span className="gtrack__plan-label">Investing every month</span>
-          <input
-            className="gtrack__plan-input"
-            type="number"
-            min="0"
-            step="5000"
-            value={monthly}
-            onChange={(e) => setPlanned(Math.max(0, Number(e.target.value) || 0))}
-          />
-        </label>
-        <div className="gtrack__plan-field">
-          <span className="gtrack__plan-label">Assumed return</span>
-          <div className="segmented segmented--sm" role="group" aria-label="Assumed annual return">
-            {RATES.map((r) => (
-              <button key={r} className={rate === r ? 'active' : ''} onClick={() => setRate(r)}>
-                {(r * 100).toFixed(0)}%
-              </button>
-            ))}
-          </div>
-        </div>
-        {planned != null && Math.round(g.avg6 / 1000) * 1000 !== planned && (
-          <button className="gtrack__plan-reset" onClick={() => setPlanned(null)}>
-            reset to my pace
-          </button>
-        )}
-        {projection && (
-          <div className="gtrack__eta">
-            <span className="gtrack__eta-label">reaches {formatINRCompact(g.goal)} in</span>
-            <span className="gtrack__eta-date">
-              {projection.date ? monthYear(projection.date) : 'beyond 48 yrs'}
-              {projection.monthsNeeded && (
-                <span className="gtrack__eta-yrs"> · {(projection.monthsNeeded / 12).toFixed(1)} yrs</span>
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="gtrack__charts">
-        <section className="gtrack__pane">
-          <div className="gtrack__pane-head">
-            <h4 className="gtrack__pane-title">Journey to the goal</h4>
-            <div className="gtrack__legend">
-              <span className="gtrack__legend-item">
-                <span className="gtrack__key" style={{ '--k': CORPUS }} /> corpus
-              </span>
-              <span className="gtrack__legend-item">
-                <span className="gtrack__key" style={{ '--k': INVESTED }} /> invested
-              </span>
-              {projection && (
-                <span className="gtrack__legend-item">
-                  <span className="gtrack__key gtrack__key--dash" style={{ '--k': PROJECTED }} /> projected
+      {/* The ETA is the payoff of the dashed line above, so it sits right under
+          it. The plan behind it (amount + assumed return) is a dial you set
+          once — tucked behind the summary chip until tapped. */}
+      <section className="gtrack__section">
+        <div className="gtrack__eta">
+          <span className="gtrack__eta-main">
+            {projection ? (
+              <>
+                <span className="gtrack__eta-label">On this pace you hit {formatINRCompact(g.goal)} by</span>
+                <span className="gtrack__eta-date">
+                  {projection.date ? monthYear(projection.date) : 'beyond 48 yrs'}
+                  {projection.monthsNeeded && (
+                    <span className="gtrack__eta-yrs">{(projection.monthsNeeded / 12).toFixed(1)} yrs away</span>
+                  )}
                 </span>
-              )}
-              <span className="gtrack__legend-item">
-                <span className="gtrack__key" style={{ '--k': GOAL_C }} /> goal
-              </span>
-            </div>
-          </div>
-          <JourneyChart g={g} projection={projection} />
-        </section>
+              </>
+            ) : (
+              <>
+                <span className="gtrack__eta-label">No date yet</span>
+                <span className="gtrack__eta-date">Set a monthly amount</span>
+              </>
+            )}
+          </span>
+          <button
+            className={`gtrack__eta-toggle ${planOpen ? 'open' : ''}`}
+            onClick={() => setPlanOpen((o) => !o)}
+            aria-expanded={planOpen}
+          >
+            {formatINRCompact(monthly)}/mo · {(rate * 100).toFixed(0)}%
+            <span className="gtrack__caret" aria-hidden="true" />
+          </button>
+        </div>
 
-        <section className="gtrack__pane gtrack__pane--narrow">
-          <div className="gtrack__pane-head">
-            <h4 className="gtrack__pane-title">Monthly investment</h4>
-            <span className="gtrack__pane-note">last {Math.min(MONTH_BARS, g.months.length)} months</span>
+        {planOpen && (
+          <div className="gtrack__planbox">
+            <label className="gtrack__plan-field">
+              <span className="gtrack__plan-label">Investing every month</span>
+              <input
+                className="gtrack__plan-input"
+                type="number"
+                min="0"
+                step="5000"
+                value={monthly}
+                onChange={(e) => setPlanned(Math.max(0, Number(e.target.value) || 0))}
+              />
+            </label>
+            <div className="gtrack__plan-field">
+              <span className="gtrack__plan-label">Assumed return</span>
+              <div className="segmented segmented--sm" role="group" aria-label="Assumed annual return">
+                {RATES.map((r) => (
+                  <button key={r} className={rate === r ? 'active' : ''} onClick={() => setRate(r)}>
+                    {(r * 100).toFixed(0)}%
+                  </button>
+                ))}
+              </div>
+            </div>
+            {planned != null && atPace !== planned && (
+              <button className="gtrack__plan-reset" onClick={() => setPlanned(null)}>
+                reset to my pace ({formatINRCompact(atPace)})
+              </button>
+            )}
           </div>
-          <PaceChart months={g.months} avg={g.avg6} />
-        </section>
-      </div>
+        )}
+      </section>
+
+      <section className="gtrack__section">
+        <div className="gtrack__section-head">
+          <h4 className="gtrack__section-title">Monthly investment</h4>
+          <span className="gtrack__section-note">last {Math.min(MONTH_BARS, g.months.length)} months</span>
+        </div>
+        <PaceChart months={g.months} avg={g.avg6} />
+      </section>
+
+      {sheetOpen && <ReturnSheet detail={g.detail} onClose={() => setSheetOpen(false)} />}
     </div>
   )
 }

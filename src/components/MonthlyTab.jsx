@@ -23,7 +23,7 @@ const SERIES = [
 const monthKeyOf = (d) =>
   d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null
 
-export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
+export default function MonthlyTab({ transactions = [], mfTransactions = [], focusMonth = null }) {
   const [activeSource, setActiveSource] = useState(null)
 
   // Recurring SIP legs are already injected upstream (Dashboard's view memo),
@@ -71,15 +71,21 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
 
   const equity = useMemo(() => equityBreakdown(filteredTransactions), [filteredTransactions])
 
-  // Month picker for the donuts + detail; default to the latest month.
+  // Month picker for the donuts + detail; defaults to the latest month, or to
+  // the month deep-linked from the Consolidated goal card. The tab unmounts on
+  // every switch, so seeding the state is enough to make the link land.
   const capOptions = useMemo(() => [...cap.months].reverse().concat(cap.all), [cap])
-  const [selectedMonth, setSelectedMonth] = useState(null)
+  const [selectedMonth, setSelectedMonth] = useState(focusMonth)
 
   const activeMonth = useMemo(() => {
     const defaultMonth = displayMonths[0]?.month || 'all'
     if (selectedMonth === null) return defaultMonth
     if (selectedMonth === 'all') return 'all'
-    const exists = capOptions.some((o) => o.month === selectedMonth)
+    // A month with equity buys but no MF buys isn't in capOptions — accept it
+    // anyway, the donut simply shows "no MF purchases this month".
+    const exists =
+      capOptions.some((o) => o.month === selectedMonth) ||
+      displayMonths.some((m) => m.month === selectedMonth)
     return exists ? selectedMonth : defaultMonth
   }, [selectedMonth, capOptions, displayMonths])
 
@@ -88,9 +94,15 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [] }) {
   const selLabel =
     activeMonth === 'all' ? 'All months' : months.find((m) => m.month === activeMonth)?.label || activeMonth
 
+  // Options span every month that has any transaction, not just the MF ones.
+  const monthOptions = useMemo(
+    () => displayMonths.map((m) => ({ month: m.month, label: m.label })).concat(cap.all),
+    [displayMonths, cap],
+  )
+
   const monthSelect = (
     <select className="search select" value={activeMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-      {capOptions.map((o) => (
+      {monthOptions.map((o) => (
         <option key={o.month} value={o.month}>
           {o.label}
         </option>

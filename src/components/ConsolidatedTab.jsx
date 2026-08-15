@@ -47,6 +47,7 @@ export default function ConsolidatedTab({
   mfTransactions = [],
   navMap = null,
   priceHistory = null,
+  onOpenMonth = null,
 }) {
   const isMobile = useIsMobile()
   const cards = cardSummaries(holdings)
@@ -69,6 +70,7 @@ export default function ConsolidatedTab({
         mfTransactions={mfTransactions}
         navMap={navMap}
         priceHistory={priceHistory}
+        onOpenMonth={onOpenMonth}
       />
     )
   }
@@ -81,6 +83,7 @@ export default function ConsolidatedTab({
         mfTransactions={mfTransactions}
         navMap={navMap}
         priceHistory={priceHistory}
+        onOpenMonth={onOpenMonth}
       />
 
       <PortfolioCard title="Total Portfolio" color="#9db4ff" stats={cards.total} featured />

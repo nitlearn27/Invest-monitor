@@ -49,7 +49,7 @@ function buildAssets(equityTxns, mfTxns) {
     const symbol = t.symbol || null
     add(
       `e:${t.source}:${symbol || low(t.name)}`,
-      { mf: false, name: t.name, symbol, source: t.source },
+      { mf: false, cls: t.type === 'etf' ? 'etf' : 'stock', name: t.name, symbol, source: t.source },
       { t: t.date.getTime(), sell: t.side === 'SELL', qty: t.qty || 0, price: t.price || 0 },
     )
   }
@@ -57,7 +57,7 @@ function buildAssets(equityTxns, mfTxns) {
     if (!t.date) continue
     add(
       `m:${t.source}:${low(t.name)}`,
-      { mf: true, name: t.name, symbol: null, source: t.source },
+      { mf: true, cls: 'mf', name: t.name, symbol: null, source: t.source },
       { t: t.date.getTime(), sell: t.side === 'SELL', qty: t.units, amount: t.amount || 0 },
     )
   }
@@ -139,6 +139,43 @@ function gridSamples(t0, tNow, eventTimes) {
   return [...set].sort((a, b) => a - b)
 }
 
+// Positions the timeline can't see. A broker with no transaction sheet (Axis,
+// Coin) has its whole value in the constant baseline offset, so it contributes
+// exactly zero month-over-month movement — which is why its funds never showed
+// up among the movers. Price them for THIS MONTH only, holding units constant:
+// a one-month assumption we can stand behind, unlike back-projecting today's
+// units across years of history (which is why the long corpus series still
+// carries them flat). Levels are scaled off the holding's live `current`, so
+// these rows stay tied to the Total Portfolio card.
+function estimateMonthMovers(holdings, baselineSources, navMap, priceHistory, openT, tNow) {
+  const estimated = []
+  const unpriced = []
+  const srcs = new Set(baselineSources)
+  for (const h of holdings) {
+    if (!srcs.has(h.source)) continue
+    const close = h.current != null ? h.current : h.invested || 0
+    if (!(close > 0)) continue
+    const hist = historyFor({ mf: h.type === 'mf', name: h.name, symbol: h.symbol }, navMap, priceHistory)
+    const px = hist ? walkPrice(hist.t, hist.c, [openT, tNow]) : null
+    if (!px || !(px[0] > 0) || !(px[1] > 0)) {
+      unpriced.push({ name: h.name, source: h.source, value: close })
+      continue
+    }
+    const open = close * (px[0] / px[1])
+    estimated.push({
+      name: h.name,
+      source: h.source,
+      cls: h.type,
+      estimated: true,
+      open,
+      added: 0,
+      close,
+      market: close - open,
+    })
+  }
+  return { estimated, unpriced }
+}
+
 const mean = (xs) => (xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : 0)
 
 // Projection horizon: 12 years of chart. A slower plan still reports its real
@@ -172,12 +209,45 @@ export function goalProgress({
   let anyPriced = false
   let carriedAtCost = 0 // positions we could find no history for at all
 
+  // Last sample of the previous month — the opening line for "what happened this
+  // month", per position (see `detail` below).
+  const curMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  let openIdx = -1
+  for (let i = 0; i < n; i++) if (samples[i] < curMonthStart) openIdx = i
+  const movers = []
+
   for (const a of assets) {
     const { qty, cost } = walkPosition(a.events, samples)
     const hist = historyFor(a, navMap, priceHistory)
     const px = hist ? walkPrice(hist.t, hist.c, samples) : null
     if (px) anyPriced = true
     else if (qty[n - 1] > EPS) carriedAtCost += 1
+
+    // Valuation at one sample: market value while held and priced, cost
+    // otherwise. The fold below and the level-match must both use this — a
+    // closed position keeps whatever cost the running average left behind (a
+    // redemption whose buys predate the sheet leaves a negative remainder), and
+    // valuing it at 0 in one place and at cost in the other put the corpus
+    // endpoint off the Total Portfolio card by exactly that remainder.
+    const valAt = (i) => (qty[i] <= EPS || !px || px[i] == null ? cost[i] : qty[i] * px[i])
+
+    if (openIdx >= 0) {
+      const open = valAt(openIdx)
+      const close = valAt(n - 1)
+      const added = cost[n - 1] - cost[openIdx]
+      if (open > EPS || close > EPS || Math.abs(added) > EPS) {
+        movers.push({
+          name: a.name,
+          source: a.source,
+          cls: a.cls,
+          priced: !!px,
+          open,
+          added,
+          close,
+          market: close - open - added,
+        })
+      }
+    }
 
     for (let i = 0; i < n; i++) {
       invested[i] += cost[i]
@@ -190,8 +260,7 @@ export function goalProgress({
       else value[i] += cost[i]
     }
     costNow.set(a.source, (costNow.get(a.source) || 0) + cost[n - 1])
-    const last = px && px[n - 1] != null ? qty[n - 1] * px[n - 1] : cost[n - 1]
-    valueNow.set(a.source, (valueNow.get(a.source) || 0) + last)
+    valueNow.set(a.source, (valueNow.get(a.source) || 0) + valAt(n - 1))
   }
 
   // Level-match both series to the portfolio totals, per source.
@@ -260,6 +329,59 @@ export function goalProgress({
         }
       : null
 
+  // The same month, position by position — what backs the "markets gave you X"
+  // headline. Per-position levels come off the timeline only, so the constant
+  // per-source offset (brokers with no transaction sheet, positions with no
+  // price history) is reported separately as `untracked`; it never moves, so
+  // every rupee of market movement here is real and the classes sum to
+  // growth.market exactly.
+  const detail =
+    growth && openIdx >= 0 && valueFrom != null && openIdx >= valueFrom
+      ? (() => {
+          const { estimated, unpriced } = estimateMonthMovers(
+            holdings,
+            baselineSources,
+            navMap,
+            priceHistory,
+            samples[openIdx],
+            tNow,
+          )
+          const classes = new Map()
+          for (const m of movers) {
+            const c = classes.get(m.cls) || { key: m.cls, open: 0, added: 0, market: 0, close: 0 }
+            c.open += m.open
+            c.added += m.added
+            c.market += m.market
+            c.close += m.close
+            classes.set(m.cls, c)
+          }
+          return {
+            month: thisMonth.month,
+            label: thisMonth.label,
+            openValue: growth.from,
+            openInvested: invested[openIdx],
+            added: growth.added,
+            market: growth.market,
+            closeValue: currentValue,
+            closeInvested: currentInvested,
+            // Return on the money that was already working at the start of the
+            // month — contributions land mid-month and haven't earned it.
+            returnPct: growth.from > 0 ? (growth.market / growth.from) * 100 : null,
+            untracked: baseValue,
+            classes: [...classes.values()].sort((a, b) => b.close - a.close),
+            // Every position that moved, both sides of the fence. `estimated`
+            // rows are NOT in `market`/`classes` above — those must keep tying
+            // to the corpus series — so the UI tags them and says so.
+            movers: [...movers, ...estimated]
+              .filter((m) => Math.abs(m.market) > 1)
+              .sort((a, b) => Math.abs(b.market) - Math.abs(a.market)),
+            estimatedMarket: estimated.reduce((a, m) => a + m.market, 0),
+            estimatedCount: estimated.length,
+            unpriced,
+          }
+        })()
+      : null
+
   return {
     samples,
     invested,
@@ -276,6 +398,7 @@ export function goalProgress({
     thisMonth,
     lastMonth,
     growth,
+    detail,
     avg6,
     avg12,
     baselineSources,
