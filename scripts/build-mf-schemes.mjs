@@ -23,27 +23,59 @@ const GSHEET_MIME = 'application/vnd.google-apps.spreadsheet'
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const MFAPI_SEARCH = 'https://api.mfapi.in/mf/search'
 
-// Bank distributors sell Regular plans; everyone else here is Direct.
+// Fallback plan per source, used only when the fund's own name doesn't say.
+// Bank distributors sell Regular plans. Groww defaults to REGULAR: its pages
+// spell out "Direct" in the scheme name whenever the holding is Direct (verified
+// across all 10 Groww funds against their 19-Jun-2026 NAVs), so a Groww name
+// with no plan word is a Regular-plan holding bought before the user moved to
+// direct plans. Getting this wrong is expensive and silent — a Regular fund
+// priced at its Direct NAV read ~14% high on the ICICI Banking holding alone.
 const SOURCE_PLAN = {
   'My MFs': 'Direct',
   'My MF Coin': 'Direct',
-  'MF Groww': 'Direct',
+  'MF Groww': 'Regular',
   'Axis Bank MF': 'Regular',
+}
+
+// The name itself wins when it declares a plan — brokers write "… Direct
+// Growth" / "… Regular growth" — otherwise fall back to the source default.
+const planFor = (name, source) => {
+  if (/\bdirect\b/i.test(name)) return 'Direct'
+  if (/\bregular\b/i.test(name)) return 'Regular'
+  return SOURCE_PLAN[source] || 'Direct'
 }
 
 // Manual overrides (keyed by mfKey) for funds where mfapi's search doesn't return
 // the right plan/variant in its result set (legacy ICICI schemes mostly), so the
 // auto-matcher can't reach it. Verified by hand against /mf/<code>/latest. These
 // survive re-runs. Add an entry here rather than editing mf-schemes.json directly.
+// The Groww block below was pinned on 2026-08-15 by dividing the 19-Jun-2026
+// Groww snapshot's Current Value by its Units for all 10 funds: each implied NAV
+// lands on that one date under exactly one plan, which settles the plan per fund.
+// Cross-checked against MF Central for Kotak Flexicap (₹1,32,207.08, NAV 86.42) —
+// exact to the paisa.
 const OVERRIDES = {
   'icici pru multi asset': { schemeCode: 101144, plan: 'Regular' },
   'icici prudential value': { schemeCode: 120323, plan: 'Direct' },
-  'icici prudential medium term bond': { schemeCode: 120670, plan: 'Direct' },
-  'icici prudential corporate bond': { schemeCode: 120692, plan: 'Direct' },
   // Legacy 2015 lump-sum holding — Regular plan, unlike everything else on
   // INDmoney (sheet current ₹8.32L / 899.243 units ⇒ NAV ~925 = Regular; the
-  // Direct NAV would imply ~₹9.4L).
+  // Direct NAV would imply ~₹9.4L). The Groww ELSS is Regular too, so the one
+  // shared key serves both.
   'icici prudential elss tax saver': { schemeCode: 100354, plan: 'Regular' },
+  // Groww Regular-plan holdings (pre-direct-plan era; Groww omits "Direct" from
+  // the scheme name for these). Priced at their Direct NAV they read up to 14%
+  // high.
+  'icici prudential banking and financial services': { schemeCode: 109445, plan: 'Regular' },
+  'icici prudential flexicap': { schemeCode: 148989, plan: 'Regular' },
+  'kotak flexicap': { schemeCode: 112090, plan: 'Regular' },
+  'sbi equity hybrid': { schemeCode: 102885, plan: 'Regular' },
+  'icici prudential medium term bond': { schemeCode: 102741, plan: 'Regular' },
+  'icici prudential corporate bond': { schemeCode: 111987, plan: 'Regular' },
+  // Sold out of in Jul 2025, so it never shows in holdings — but the SELL rows
+  // carry units and no amount, so the NAV still sets the released cost. Same
+  // Groww Regular-plan era as the block above; without this the search returns
+  // only the Direct code and the label disagreed with the scheme.
+  'icici prudential balanced advantage': { schemeCode: 104685, plan: 'Regular' },
 }
 
 // MUST stay identical to mfKey() in src/lib/navs.js.
@@ -127,17 +159,38 @@ async function harvestNames() {
   // holdings AND MF transactions — the INDmoney holdings sheet is gone (holdings
   // are derived from transactions now), so transactions are the only place its
   // fund names appear.
+  //
+  // Every (name, source) variant behind a key is kept alongside, purely so
+  // `warnPlanClashes` can shout if two brokers hold the same fund in DIFFERENT
+  // plans. The map has no source dimension, so one key cannot serve both, and
+  // the loser would be silently mispriced by ~1%/yr of expense-ratio drift.
   const byKey = new Map()
+  const seen = (k, name, source) => {
+    if (!k) return
+    if (!byKey.has(k)) byKey.set(k, { name, source, variants: [] })
+    const e = byKey.get(k)
+    if (!e.variants.some((v) => v.name === name && v.source === source)) e.variants.push({ name, source })
+  }
   for (const h of holdings) {
-    if (h.type !== 'mf') continue
-    const k = mfKey(h.name)
-    if (k && !byKey.has(k)) byKey.set(k, { name: h.name, source: h.source })
+    if (h.type === 'mf') seen(mfKey(h.name), h.name, h.source)
   }
-  for (const t of mfTransactions) {
-    const k = mfKey(t.name)
-    if (k && !byKey.has(k)) byKey.set(k, { name: t.name, source: t.source })
+  for (const t of mfTransactions) seen(mfKey(t.name), t.name, t.source)
+  return [...byKey.entries()].map(([key, v]) => ({ key, ...v }))
+}
+
+// The same fund held in DIFFERENT plans on two brokers. The key is the name, so
+// the entry needs a per-broker `bySource` block (built below) — this just names
+// them up front so the split is visible in the log rather than inferred from it.
+// Overridden keys are already settled by hand and stay quiet.
+function warnPlanClashes(funds) {
+  for (const f of funds) {
+    if (OVERRIDES[f.key]) continue
+    const plans = new Set(f.variants.map((v) => planFor(v.name, v.source)))
+    if (plans.size < 2) continue
+    console.warn(`  !! PLAN SPLIT on "${f.key}" — held in ${[...plans].join(' and ')}:`)
+    for (const v of f.variants) console.warn(`       ${v.source.padEnd(14)} ${v.name}  => ${planFor(v.name, v.source)}`)
+    console.warn('     Resolving per broker into bySource.\n')
   }
-  return [...byKey.values()]
 }
 
 // Score an mfapi candidate against the wanted fund; higher is better, -1 reject.
@@ -163,7 +216,7 @@ function score(want, plan, cand) {
 }
 
 async function resolve1(name, source) {
-  const plan = SOURCE_PLAN[source] || 'Direct'
+  const plan = planFor(name, source)
   // Query both spellings ("Mid Cap" and "Midcap") since AMFI/mfapi substring
   // search is spelling-sensitive; merge + dedupe results before scoring.
   const spaced = cleanQuery(name)
@@ -192,10 +245,10 @@ async function resolve1(name, source) {
 async function main() {
   const funds = await harvestNames()
   console.log(`Harvested ${funds.length} unique MF holdings from Drive.\n`)
+  warnPlanClashes(funds)
   const map = {}
   const unmatched = []
-  for (const { name, source } of funds) {
-    const key = mfKey(name)
+  for (const { key, name, source, variants } of funds) {
     let hit
     if (OVERRIDES[key]) {
       const o = OVERRIDES[key]
@@ -207,7 +260,23 @@ async function main() {
       hit = await resolve1(name, source)
     }
     if (hit) {
-      map[mfKey(name)] = hit
+      // Same fund, different plans on different brokers: resolve each broker's
+      // own variant into `bySource` so schemeFor(name, source) can pick. An
+      // OVERRIDE means a human already settled the fund, so leave it alone.
+      const plans = new Set(variants.map((v) => planFor(v.name, v.source)))
+      if (plans.size > 1 && !OVERRIDES[key]) {
+        const bySource = {}
+        for (const v of variants) {
+          const h = await resolve1(v.name, v.source)
+          if (h) bySource[v.source] = h
+        }
+        if (Object.keys(bySource).length > 1) {
+          hit = { ...hit, bySource }
+          console.log(`  ↳ per-broker plans for "${key}":`)
+          for (const [s, h] of Object.entries(bySource)) console.log(`      ${s.padEnd(14)} ${h.schemeCode}  ${h.schemeName}`)
+        }
+      }
+      map[key] = hit
       console.log(`  ✓ ${name}  [${source}]\n      -> ${hit.schemeCode}  ${hit.schemeName}`)
     } else {
       unmatched.push(`${name}  [${source}]`)

@@ -61,6 +61,12 @@ function monthKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+// Opening-balance rows carry a position the broker's transaction page doesn't
+// reach back to (see classify.js). They give the holding its units, but they are
+// not money added in the month they are dated, so every "what did I invest"
+// aggregate skips them.
+const isContribution = (t) => t.side === 'BUY' && t.date && !t.opening
+
 // Consolidated monthly invested across MF, Stocks and ETFs (BUY only).
 // MF amounts come from the MF-transactions statement (units*nav); equity from
 // qty*price, classed stock/ETF by ISIN.
@@ -83,7 +89,7 @@ export function monthlyInvestments(equityTxns = [], mfTxns = []) {
   }
 
   for (const t of equityTxns) {
-    if (t.side !== 'BUY' || !t.date) continue
+    if (!isContribution(t)) continue
     const row = ensure(t.date)
     const val = (t.qty || 0) * (t.price || 0)
     row[txnType(t)] += val
@@ -92,7 +98,7 @@ export function monthlyInvestments(equityTxns = [], mfTxns = []) {
   }
 
   for (const t of mfTxns) {
-    if (t.side !== 'BUY' || !t.date) continue
+    if (!isContribution(t)) continue
     const row = ensure(t.date)
     const val = t.amount || 0
     row.mf += val
@@ -138,7 +144,7 @@ export function mfCapBreakdown(mfTxns = []) {
   let allTotal = 0
 
   for (const t of mfTxns) {
-    if (t.side !== 'BUY' || !t.date) continue
+    if (!isContribution(t)) continue
     const amt = t.amount || 0
     const c = capOf(t.name)
     allTotal += amt
@@ -188,7 +194,7 @@ export function equityBreakdown(equityTxns = []) {
   let allTotal = 0
 
   for (const t of equityTxns) {
-    if (t.side !== 'BUY' || !t.date) continue
+    if (!isContribution(t)) continue
     const val = (t.qty || 0) * (t.price || 0)
     allTotal += val
     addScrip(allScrips, t.name, val)

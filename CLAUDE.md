@@ -15,8 +15,8 @@ Native Google Sheets in a public Drive folder (copy-pastes of broker pages:
 fetched via Drive API v3 + API key using the **export** endpoint (`drive.js`);
 `FileDropzone` is a local drag-drop fallback into the same pipeline. Sheets are
 auto-detected by **content/structure** in `classify.js` — each parser returns
-`null` if its shape isn't present; never rely on filenames. The 2 INDmoney
-sheets that need manual upkeep:
+`null` if its shape isn't present; never rely on filenames. The 3 sheets that
+need manual upkeep:
 
 1. **Stocks Transactions**: `Date | Stock Name | Quantity | Order Type |
    Requested Price`. `Order Type` carries the side ("Buy"/"Sell": contains
@@ -28,15 +28,55 @@ sheets that need manual upkeep:
    pre-history ELSS purchases live here as ordinary rows). → `mfTransactions`
    (feeds Monthly + Transactions tabs and MF holdings derivation). **Must be
    complete history.**
+3. **MF Groww Transactions**: `Date | Mutual Fund Name | Amount | Type | Units |
+   Status` (or the older `Amount / Units` single column). Dates like `3 Jun '26`;
+   blank/failed `Status` rows are skipped. Complete for the funds still being
+   bought (Quant Small Cap, Invesco Midcap — verified 2026-08-15 against the
+   retired paste: units within 0.1%). Funds the user **stopped adding to but
+   still holds** predate Groww's transactions page and carry one
+   **opening-balance row** each — `Type: Opening`, with the fund's units and
+   invested amount — see below.
+4. **Groww Stocks Transactions**: same shape as Stocks Transactions plus a
+   `Status` column (only `Success` counts; blank/`Failed` are skipped — the
+   sheet holds an older statusless paste above the good one and the blank-status
+   rule is what discards it, so **don't relax it**). Verified 2026-08-15 against
+   the retired `Stocks Groww` paste: all 4 ETFs reproduce to the rupee.
 
-**INDmoney holdings are DERIVED from these transactions** (`src/lib/derive.js`,
-applied in Dashboard's view memo): the manual "My Stocks" / "My MFs" holdings
-sheets are retired. Their parsers remain; if the sheets still exist in Drive,
-derived rows replace them (`withDerivedHoldings` filters sources `My Stocks` /
-`My MFs`). Derivation folds the synthetic SIP legs in (units from NAV history
-via `enrichMfTransactions`); SELLs release cost at the running average. Verified
-2026-07-05: derived == sheets exactly (stocks to the rupee, MFs to <0.5%).
-Consequence: the Reconcile panel is trivially "match" for INDmoney.
+**Holdings are DERIVED from these transactions** (`src/lib/derive.js`, applied
+in Dashboard's view memo) for **every** source in `DERIVED_EQUITY_SOURCES`
+(`My Stocks`, `Stocks Groww`) and `DERIVED_MF_SOURCES` (`My MFs`, `MF Groww`):
+all four holdings pastes are retired. Their parsers remain, and
+`withDerivedHoldings` replaces a paste's row only for positions the transactions
+actually cover — a position with no rows yet is **left on the paste rather than
+dropped**, so a missing opening row can't silently delete lakhs. Equity keys on
+**symbol** first (the paste and the orders page spell scrips differently —
+"ICICI Prud Gold ETF" vs "ICICI Prudential Gold ETF" — only the ticker joins
+them); MFs key on name. Derivation folds the synthetic SIP legs in (units from
+NAV history via `enrichMfTransactions`); SELLs release cost at the running
+average. Verified 2026-07-05 (INDmoney) and 2026-08-15 (Groww): derived ==
+sheets (stocks/ETFs to the rupee, MFs to <0.5%). Consequence: the Reconcile
+panel is trivially "match" for INDmoney and Groww.
+
+**Opening-balance rows** (`opening: true`, set by `parseGrowwMfTransactions` on
+`Type` = `Opening` and by `parseStockTransactions` on `Order Type` = `Opening`,
+where Quantity is the shares held and Requested Price the average cost) give a
+carried-in position its units without a real purchase date. Groww's `Status`
+filter **exempts** them — they're hand-typed, and demanding a status word on an
+invented row would silently drop the position. They are ordinary buys to
+derive.js — that's the point — but they are not money moved, and their date is
+arbitrary, so:
+- `monthly.js` skips them in every contribution aggregate (`isContribution`),
+- `goal.js` keeps them **off** the timeline (`buildAssets` skips them). They stay
+  inside the constant per-source baseline offset — back-projecting today's units
+  across years of NAV history would invent a journey; dating them all on one
+  recent day would put a false step in both lines.
+- because they're off the timeline they'd never move, so `estimateMonthMovers`
+  prices them for the current month like an Axis/Coin holding. Its match is
+  position-level (`holdingKey` vs the timeline keys) **only** for
+  `DERIVED_SOURCES`, where holdings and transactions key alike; every other
+  source stays whole-source, so a paste whose names drift from its transaction
+  sheet is never counted twice.
+- `TransactionsTab` labels them `OPENING`, not `BUY`.
 
 Gotchas: export XLSX is parsed with `cellDates:true`, so date columns arrive as
 JS `Date` — `parseNumericDmy` accepts a `Date` or a `DD-MM-YYYY` string. An
@@ -75,8 +115,28 @@ recomputed live. **Never fabricate values.**
   history — this is what gives SIP legs their units). Units priority in
   `enrichMfHoldings`: qty → invested/avgPrice → snapshot-scale via `asOf`;
   derived holdings always carry qty, so the fallbacks are dormant. Note the
-  legacy ICICI ELSS is the **Regular** plan (generator `OVERRIDES`) although
-  everything else on INDmoney is Direct.
+  **Plan (Direct vs Regular) is the sharpest failure mode here** — the wrong plan
+  is a *different scheme code*, and its NAV drifts by the whole expense-ratio gap
+  (the Groww book read ₹1.12L high before this was fixed on 2026-08-15). Rules:
+  - The fund's own name wins when it says `Direct`/`Regular`; otherwise the
+    generator's `SOURCE_PLAN` default applies. **Groww defaults to `Regular`** —
+    its pages spell out "Direct" whenever the holding is Direct, so a bare Groww
+    name is a pre-direct-plan holding. 7 of the 10 Groww funds are Regular.
+  - To settle a fund's plan from data: divide a broker snapshot's Current Value
+    by its Units and find which candidate scheme has that NAV — the whole paste
+    lands on one date under exactly one plan (the Groww paste = 2026-06-19).
+    Cross-checked against MF Central, which states the plan outright.
+  - The map keys on **name only**, so one fund held in different plans on two
+    brokers needs a per-broker `bySource` block; `schemeFor(name, source)` picks
+    it and every call site passes `source`. `warnPlanClashes` in the generator
+    detects the split and fills `bySource` automatically (overridden keys are
+    left alone). Live case: Motilal Oswal Nifty Smallcap 250 Index — Direct on
+    Coin, Regular on Axis.
+  - Legacy ICICI ELSS is **Regular** on both INDmoney and Groww (`OVERRIDES`),
+    although everything else on INDmoney is Direct.
+- `navOn` compares on **calendar date**: NAV history is stamped at UTC midnight
+  but transaction dates are IST midnight, so a raw epoch compare silently
+  returned the previous business day's NAV (~1% off on the filled units).
 - `Dashboard` fetches both on load/cache-boot and on **Refresh prices** (⋮
   menu); the `view` memo composes `withRecurringSips` → `enrichMfTransactions`
   → `withDerivedHoldings` → `enrichHoldings` → `enrichMfHoldings`, so
@@ -132,7 +192,9 @@ recomputed live. **Never fabricate values.**
 ## Layout
 - `src/config.js` — Drive/proxy env config, asset-type labels & colors,
   platform map, `CORPUS_GOAL` (₹5 Cr goal target)
-- `src/lib/` — drive, parse, classify, derive (txns → INDmoney holdings), goal
+- `src/lib/` — drive, parse, classify, derive (txns → INDmoney + Groww MF
+  holdings; `DERIVED_MF_SOURCES` lists the MF sheets complete enough to do it
+  from — Axis/Coin have no transaction sheet, so their pastes stay), goal
   (corpus-vs-goal series), quotes, navs, portfolio, reconcile, monthly, whatif
   (per-category buy simulation), sourceStyle, format
 - `src/components/` — Dashboard (loads data, owns tabs), AppBar, SummaryCard,

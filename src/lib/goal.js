@@ -22,6 +22,11 @@
 // series end exactly on the Total Portfolio card's Current / Invested figures
 // while every month-over-month change still comes from a real transaction.
 import { schemeFor } from './navs.js'
+import { DERIVED_MF_SOURCES, DERIVED_EQUITY_SOURCES } from './derive.js'
+
+// Sources whose holdings are derived from their own transactions, so a holding
+// and its timeline position are guaranteed to key alike.
+const DERIVED_SOURCES = [...DERIVED_MF_SOURCES, ...DERIVED_EQUITY_SOURCES]
 
 const DAY = 24 * 60 * 60 * 1000
 const EPS = 1e-6
@@ -34,18 +39,31 @@ const monthStart = (t) => {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
-// One record per (source, scrip/fund) — the same grain derive.js aggregates at,
-// so a scrip held on two platforms stays two positions and each source can be
-// level-matched against its own holdings sheet.
+// Timeline key for a transaction or a holding — one record per (source,
+// scrip/fund), the same grain derive.js aggregates at, so a scrip held on two
+// platforms stays two positions and each source can be level-matched against
+// its own holdings sheet. Both sides build the key the same way, so a derived
+// holding always finds its own timeline position.
+const holdingKey = (h) => (h.type === 'mf'
+  ? `m:${h.source}:${low(h.name)}`
+  : `e:${h.source}:${h.symbol || low(h.name)}`)
+
+// Opening-balance rows (classify.js) give a stopped-but-still-held fund its
+// units without a real purchase date, so they are deliberately kept OFF the
+// timeline: back-projecting today's units across years of NAV history would
+// invent a journey the user never took, and dating them all at one recent day
+// would put a false step in both lines. They stay inside the constant
+// per-source baseline instead — the same place a broker with no transaction
+// sheet lives — and estimateMonthMovers prices them for the current month.
 function buildAssets(equityTxns, mfTxns) {
   const assets = new Map()
   const add = (key, seed, ev) => {
-    if (!assets.has(key)) assets.set(key, { ...seed, events: [] })
+    if (!assets.has(key)) assets.set(key, { ...seed, key, events: [] })
     assets.get(key).events.push(ev)
   }
 
   for (const t of equityTxns) {
-    if (!t.date) continue
+    if (!t.date || t.opening) continue
     const symbol = t.symbol || null
     add(
       `e:${t.source}:${symbol || low(t.name)}`,
@@ -54,7 +72,7 @@ function buildAssets(equityTxns, mfTxns) {
     )
   }
   for (const t of mfTxns) {
-    if (!t.date) continue
+    if (!t.date || t.opening) continue
     add(
       `m:${t.source}:${low(t.name)}`,
       { mf: true, cls: 'mf', name: t.name, symbol: null, source: t.source },
@@ -112,7 +130,7 @@ function walkPrice(ts, px, samples) {
 // Ascending { t, c } history for an asset, or null when we have no prices for it.
 function historyFor(asset, navMap, priceHistory) {
   if (asset.mf) {
-    const code = schemeFor(asset.name)?.schemeCode
+    const code = schemeFor(asset.name, asset.source)?.schemeCode
     const hist = code != null ? navMap?.get?.(code)?.history : null
     if (!hist?.length) return null
     const t = []
@@ -142,20 +160,28 @@ function gridSamples(t0, tNow, eventTimes) {
 // Positions the timeline can't see. A broker with no transaction sheet (Axis,
 // Coin) has its whole value in the constant baseline offset, so it contributes
 // exactly zero month-over-month movement — which is why its funds never showed
-// up among the movers. Price them for THIS MONTH only, holding units constant:
-// a one-month assumption we can stand behind, unlike back-projecting today's
-// units across years of history (which is why the long corpus series still
-// carries them flat). Levels are scaled off the holding's live `current`, so
-// these rows stay tied to the Total Portfolio card.
-function estimateMonthMovers(holdings, baselineSources, navMap, priceHistory, openT, tNow) {
+// up among the movers. The same is true of an opening-balance position inside a
+// broker that DOES have a sheet (the stopped Groww funds). Price them for THIS
+// MONTH only, holding units constant: a one-month assumption we can stand
+// behind, unlike back-projecting today's units across years of history (which is
+// why the long corpus series still carries them flat). Levels are scaled off the
+// holding's live `current`, so these rows stay tied to the Total Portfolio card.
+//
+// Position-level matching is only trusted where the holdings are derived from
+// the same transactions (`DERIVED_SOURCES`), so the two sides key alike. For
+// every other source it stays whole-source, as before — a paste whose scrip
+// names drift from the transaction sheet's must not be counted twice.
+function estimateMonthMovers(holdings, baselineSources, timelineKeys, navMap, priceHistory, openT, tNow) {
   const estimated = []
   const unpriced = []
   const srcs = new Set(baselineSources)
+  const offTimeline = (h) =>
+    srcs.has(h.source) || (DERIVED_SOURCES.includes(h.source) && !timelineKeys.has(holdingKey(h)))
   for (const h of holdings) {
-    if (!srcs.has(h.source)) continue
+    if (!offTimeline(h)) continue
     const close = h.current != null ? h.current : h.invested || 0
     if (!(close > 0)) continue
-    const hist = historyFor({ mf: h.type === 'mf', name: h.name, symbol: h.symbol }, navMap, priceHistory)
+    const hist = historyFor({ mf: h.type === 'mf', name: h.name, symbol: h.symbol, source: h.source }, navMap, priceHistory)
     const px = hist ? walkPrice(hist.t, hist.c, [openT, tNow]) : null
     if (!px || !(px[0] > 0) || !(px[1] > 0)) {
       unpriced.push({ name: h.name, source: h.source, value: close })
@@ -341,6 +367,7 @@ export function goalProgress({
           const { estimated, unpriced } = estimateMonthMovers(
             holdings,
             baselineSources,
+            new Set(assets.map((a) => a.key)),
             navMap,
             priceHistory,
             samples[openIdx],

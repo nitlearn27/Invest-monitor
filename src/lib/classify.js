@@ -141,6 +141,16 @@ function parseMfTransactions(sheet) {
 // Or the split format: "Date | Mutual Fund Name | Amount | Type | Units | Status"
 // Dates are formatted like "3 Jun '26".
 // Amount / Units can be "₹50,000" or "2725.771 Units".
+//
+// This is the ONLY Groww MF sheet — the "MF Groww" holdings paste is retired and
+// the holdings are derived from these rows (derive.js), so live NAV values them
+// every day instead of a snapshot going stale. Funds the user has stopped adding
+// to but still holds predate the transaction page, so each carries a single
+// opening-balance row typed `Opening` with its units and cost. Those rows are
+// real for holdings purposes but are NOT new money and have no true date, so
+// they are stamped `opening:true` and excluded from the monthly contribution
+// totals and from the goal timeline (goal.js keeps them in its constant
+// per-source baseline instead of back-projecting today's units across years).
 function parseGrowwMfTransactions(sheet) {
   const header = findHeader(sheet.rows, ['mutual fund name', 'amount / units', 'type']) ||
                  findHeader(sheet.rows, ['mutual fund name', 'amount', 'type'])
@@ -187,6 +197,7 @@ function parseGrowwMfTransactions(sheet) {
     }
 
     const typeStr = row[c.type] == null ? '' : String(row[c.type]).trim().toUpperCase()
+    const opening = typeStr.startsWith('OPENING')
     const side = typeStr === 'SELL' ? 'SELL' : 'BUY'
 
     let amount = null
@@ -212,6 +223,7 @@ function parseGrowwMfTransactions(sheet) {
       units,
       nav: null,
       amount: amount != null ? Math.round(amount) : null,
+      ...(opening ? { opening: true } : null),
       source: 'MF Groww',
     })
   }
@@ -507,9 +519,19 @@ function parseMyStocks(sheet) {
 // --- "Stocks Transactions" page (stock/ETF orders). A real table with header
 // "Date | Stock Name | Quantity | Order Type | Requested Price". `Order Type`
 // carries the side ("Buy"/"Sell") — anything containing "sell" is a SELL, all
-// else a BUY. Symbol is absent and resolved from the INDmoney name→ticker map,
-// like My Stocks. These transactions are the source of truth for the derived
-// INDmoney stock/ETF holdings (see derive.js), so the paste must be complete.
+// else a BUY. Symbol is absent and resolved from the broker's name→ticker map.
+// These transactions are the source of truth for the derived stock/ETF holdings
+// (see derive.js), so the paste must be complete.
+//
+// `Order Type` = `Opening` marks a carried-in position that predates the
+// broker's orders page — Quantity is the shares held and Requested Price the
+// average cost, which is all the derivation needs. Same contract as the MF
+// sheet's Opening rows: real for holdings, never counted as money added, and
+// kept off the goal timeline (see classify.js's Groww MF notes).
+//
+// Groww's page carries a Status column and only "Success" rows count. Opening
+// rows are hand-typed, so they are exempt — requiring the user to remember a
+// status word on a row they invented would silently drop the position.
 function parseStockTransactions(sheet, isGroww = false) {
   const header = findHeader(sheet.rows, ['date', 'stock name', 'quantity'])
   if (!header) return null
@@ -530,7 +552,10 @@ function parseStockTransactions(sheet, isGroww = false) {
       continue
     }
 
-    if (isGroww && c.status !== -1) {
+    const rawOrderType = row[c.orderType] == null ? '' : String(row[c.orderType]).trim()
+    const opening = rawOrderType.toUpperCase().startsWith('OPENING')
+
+    if (isGroww && c.status !== -1 && !opening) {
       const rawStatus = row[c.status] == null ? '' : String(row[c.status]).trim()
       if (rawStatus.toLowerCase().includes('failed') || rawStatus === '') {
         continue
@@ -538,7 +563,6 @@ function parseStockTransactions(sheet, isGroww = false) {
     }
 
     const symbol = isGroww ? growwSymbol(name) : indStocksSymbol(name)
-    const rawOrderType = row[c.orderType] == null ? '' : String(row[c.orderType]).trim()
     const side = rawOrderType.toLowerCase().includes('sell') ? 'SELL' : 'BUY'
     transactions.push({
       date: parseNumericDmy(row[c.date]),
@@ -549,6 +573,7 @@ function parseStockTransactions(sheet, isGroww = false) {
       side,
       qty: toNum(row[c.qty]),
       price: parseMoney(row[c.price]),
+      ...(opening ? { opening: true } : null),
       status: isGroww && c.status !== -1 ? (row[c.status] == null ? '' : String(row[c.status]).trim()) : rawOrderType,
       source: isGroww ? 'Stocks Groww' : 'My Stocks',
     })

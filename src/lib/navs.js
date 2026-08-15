@@ -38,8 +38,17 @@ export function mfKey(name) {
 }
 
 // Scheme descriptor ({ schemeCode, schemeName, plan }) for a fund name, or null.
-export function schemeFor(name) {
-  return SCHEME_MAP[mfKey(name)] || null
+//
+// `source` matters when the SAME fund is held in different plans on different
+// brokers — Motilal Oswal Nifty Smallcap 250 Index is Direct on Coin and Regular
+// on Axis. The name alone can't tell them apart, so such an entry carries a
+// `bySource` block and the broker picks the right one; everyone else falls
+// through to the single default. A Regular fund priced at its Direct NAV (or the
+// reverse) is off by the whole expense-ratio gap and only grows.
+export function schemeFor(name, source = null) {
+  const entry = SCHEME_MAP[mfKey(name)]
+  if (!entry) return null
+  return (source && entry.bySource?.[source]) || entry
 }
 
 // AMFI scheme codes needed to price a set of holdings or transactions (deduped).
@@ -47,7 +56,7 @@ export function schemeCodesFor(items, isTxn = false) {
   const codes = new Set()
   for (const h of items || []) {
     if (!isTxn && h.type !== 'mf') continue
-    const s = schemeFor(h.name)
+    const s = schemeFor(h.name, h.source)
     if (s?.schemeCode != null) codes.add(s.schemeCode)
   }
   return [...codes]
@@ -125,11 +134,18 @@ export async function fetchNavs(schemeCodes, { force = false } = {}) {
 
 // NAV on (or just before) a date, from newest-first history. No date -> latest
 // (so the snapshot-scaling fallback becomes a no-op when asOf is unknown).
+//
+// Compared on CALENDAR DATE, not raw epoch. `parseHistory` stamps each NAV at
+// UTC midnight, while transaction dates are local (IST) midnight — 5h30m later.
+// Comparing the two directly made a same-day NAV look like it was in the future,
+// so every lookup silently returned the PREVIOUS business day's NAV and the
+// units filled from it were off by that day's move (~1% on a volatile day).
 export function navOn(history, date) {
   if (!history?.length) return null
   if (!date) return history[0].nav
-  const t = date instanceof Date ? date.getTime() : new Date(date).getTime()
-  if (!Number.isFinite(t)) return history[0].nav
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) return history[0].nav
+  const t = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
   for (const h of history) {
     if (h.t <= t) return h.nav
   }
@@ -150,7 +166,7 @@ export function enrichMfHoldings(holdings, navMap) {
   if (!holdings) return holdings
   return holdings.map((h) => {
     if (h.type !== 'mf') return h
-    const scheme = schemeFor(h.name)
+    const scheme = schemeFor(h.name, h.source)
     if (!scheme) {
       console.warn(`[navs] no scheme code for MF "${h.name}" (key: "${mfKey(h.name)}") — using sheet value`)
       return { ...h, marketPrice: h.marketPrice ?? null }
@@ -202,7 +218,7 @@ export function enrichMfTransactions(mfTxns, navMap) {
     // If we already have everything, or don't have a date, skip.
     if (!t.date || (t.amount != null && t.units != null && t.nav != null)) return t
 
-    const scheme = schemeFor(t.name)
+    const scheme = schemeFor(t.name, t.source)
     if (!scheme) return t
 
     const nav = navMap?.get?.(scheme.schemeCode)

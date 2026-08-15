@@ -45,19 +45,19 @@
     "plan": "Regular"
   },
   "icici prudential balanced advantage": {
-    "schemeCode": 120377,
-    "schemeName": "ICICI Prudential Balanced Advantage Fund - Direct Plan -  Growth",
-    "plan": "Direct"
+    "schemeCode": 104685,
+    "schemeName": "ICICI Prudential Balanced Advantage Fund - Growth",
+    "plan": "Regular"
   },
   "icici prudential banking and financial services": {
-    "schemeCode": 120244,
-    "schemeName": "ICICI Prudential Banking and Financial Services Fund - Direct Plan -  Growth",
-    "plan": "Direct"
+    "schemeCode": 109445,
+    "schemeName": "ICICI Prudential Banking and Financial Services Fund -  Growth",
+    "plan": "Regular"
   },
   "icici prudential corporate bond": {
-    "schemeCode": 120692,
-    "schemeName": "ICICI Prudential Corporate Bond Fund - Direct Plan - Growth",
-    "plan": "Direct"
+    "schemeCode": 111987,
+    "schemeName": "ICICI Prudential Corporate Bond Fund - Growth",
+    "plan": "Regular"
   },
   "icici prudential elss tax saver": {
     "schemeCode": 100354,
@@ -65,9 +65,9 @@
     "plan": "Regular"
   },
   "icici prudential flexicap": {
-    "schemeCode": 148990,
-    "schemeName": "ICICI Prudential Flexicap Fund - Direct Plan - Growth",
-    "plan": "Direct"
+    "schemeCode": 148989,
+    "schemeName": "ICICI Prudential Flexicap Fund - Growth",
+    "plan": "Regular"
   },
   "icici prudential large cap": {
     "schemeCode": 120586,
@@ -75,9 +75,9 @@
     "plan": "Direct"
   },
   "icici prudential medium term bond": {
-    "schemeCode": 120670,
-    "schemeName": "ICICI Prudential Medium Term Bond Fund - Direct Plan - Growth",
-    "plan": "Direct"
+    "schemeCode": 102741,
+    "schemeName": "ICICI Prudential Medium Term Bond Fund - Growth",
+    "plan": "Regular"
   },
   "icici prudential value": {
     "schemeCode": 120323,
@@ -95,9 +95,9 @@
     "plan": "Direct"
   },
   "kotak flexicap": {
-    "schemeCode": 120166,
-    "schemeName": "Kotak Flexicap Fund - Growth - Direct",
-    "plan": "Direct"
+    "schemeCode": 112090,
+    "schemeName": "Kotak Flexicap Fund - Growth",
+    "plan": "Regular"
   },
   "kotak midcap": {
     "schemeCode": 119775,
@@ -122,7 +122,19 @@
   "motilal oswal nifty smallcap 250 index": {
     "schemeCode": 147624,
     "schemeName": "Motilal Oswal Nifty Smallcap 250 Index - Regular Plan",
-    "plan": "Regular"
+    "plan": "Regular",
+    "bySource": {
+      "Axis Bank MF": {
+        "schemeCode": 147624,
+        "schemeName": "Motilal Oswal Nifty Smallcap 250 Index - Regular Plan",
+        "plan": "Regular"
+      },
+      "My MF Coin": {
+        "schemeCode": 147623,
+        "schemeName": "Motilal Oswal Nifty Smallcap 250 Index Fund- Direct Plan",
+        "plan": "Direct"
+      }
+    }
   },
   "nippon india innovation": {
     "schemeCode": 152034,
@@ -165,9 +177,9 @@
     "plan": "Direct"
   },
   "sbi equity hybrid": {
-    "schemeCode": 119609,
-    "schemeName": "SBI EQUITY HYBRID FUND - DIRECT PLAN - Growth",
-    "plan": "Direct"
+    "schemeCode": 102885,
+    "schemeName": "SBI EQUITY HYBRID FUND - REGULAR PLAN -Growth",
+    "plan": "Regular"
   },
   "sbi mid cap": {
     "schemeCode": 102941,

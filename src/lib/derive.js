@@ -1,11 +1,13 @@
-// Derive the INDmoney holdings from the transaction sheets, so the manually
-// maintained "My Stocks" / "My MFs" holdings sheets no longer need upkeep.
+// Derive holdings from the transaction sheets, so the manually maintained
+// "My Stocks" / "My MFs" / "MF Groww" holdings sheets no longer need upkeep.
 //
 // The transaction pastes are complete history (verified: aggregating them
-// reproduces the last holdings sheets exactly — stocks to the paisa, MFs to
-// <0.5% once the recurring SIP legs are folded in). Purchases that predate the
-// INDmoney transactions page (the ELSS lump sums) live as ordinary rows in the
-// MF Transactions sheet, so no separate opening-balance store is needed.
+// reproduces the last holdings sheets exactly — INDmoney stocks to the paisa,
+// MFs to <0.5% once the recurring SIP legs are folded in; the Groww MF sheet
+// reproduces its two active funds to 0.1% on units). Purchases that predate a
+// broker's transactions page live as ordinary rows in the same sheet: the
+// INDmoney ELSS lump sums, and on Groww one `Opening` row per stopped-but-still-
+// held fund. So no separate opening-balance store is needed.
 //
 // Runs at view time (Dashboard), on transactions already passed through
 // withRecurringSips + enrichMfTransactions, so synthetic SIP legs exist and
@@ -42,13 +44,19 @@ function toHolding(g, source) {
   }
 }
 
-// Stocks/ETFs from the "Stocks Transactions" sheet. BUYs accumulate qty and
+// Broker stock/ETF transaction sheets complete enough to derive holdings from.
+export const DERIVED_EQUITY_SOURCES = ['My Stocks', 'Stocks Groww']
+
+// Stocks/ETFs from one broker's transactions sheet. BUYs accumulate qty and
 // cost; SELLs reduce qty and release cost at the running average (so avgPrice
-// reflects the remaining position, matching how INDmoney reports it).
-export function deriveEquityHoldings(transactions = []) {
+// reflects the remaining position, matching how the broker reports it).
+// Positions are keyed by SYMBOL first: the holdings paste and the transaction
+// page routinely spell the same scrip differently ("ICICI Prud Gold ETF" vs
+// "ICICI Prudential Gold ETF"), and only the ticker ties them together.
+export function deriveEquityHoldings(transactions = [], source = 'My Stocks') {
   const groups = new Map()
   for (const t of asc(transactions)) {
-    if (t.source !== 'My Stocks' || !t.qty) continue
+    if (t.source !== source || !t.qty) continue
     const k = t.symbol || nameKeyOf(t)
     if (!groups.has(k)) {
       groups.set(k, { name: t.name, symbol: t.symbol || null, type: t.type || 'stock', qty: 0, invested: 0 })
@@ -63,17 +71,22 @@ export function deriveEquityHoldings(transactions = []) {
       g.invested += t.qty * (t.price || 0)
     }
   }
-  return [...groups.values()].filter((g) => g.qty > EPS).map((g) => toHolding(g, 'My Stocks'))
+  return [...groups.values()].filter((g) => g.qty > EPS).map((g) => toHolding(g, source))
 }
 
-// MFs from the "MF Transactions" sheet (+ synthetic SIP legs). Amount is the
-// sheet's ₹ figure; units come from the sheet or NAV enrichment. SELLs release
-// cost proportionally by units (falling back to the redemption amount when a
-// sell row carries no units).
-export function deriveMfHoldings(mfTransactions = []) {
+// Broker MF-transaction sheets complete enough to derive that broker's holdings
+// from. Axis and Coin have no transaction sheet, so their holdings pastes stay.
+export const DERIVED_MF_SOURCES = ['My MFs', 'MF Groww']
+
+// MFs from one broker's MF transactions sheet (+ synthetic SIP legs). Amount is
+// the sheet's ₹ figure; units come from the sheet or NAV enrichment. SELLs
+// release cost proportionally by units (falling back to the redemption amount
+// when a sell row carries no units). `Opening` rows are ordinary buys here —
+// they exist precisely so the position has its units.
+export function deriveMfHoldings(mfTransactions = [], source = 'My MFs') {
   const groups = new Map()
   for (const t of asc(mfTransactions)) {
-    if (t.source !== 'My MFs') continue
+    if (t.source !== source) continue
     const k = nameKeyOf(t)
     if (!groups.has(k)) groups.set(k, { name: t.name, type: 'mf', qty: 0, invested: 0 })
     const g = groups.get(k)
@@ -90,17 +103,33 @@ export function deriveMfHoldings(mfTransactions = []) {
       g.invested += t.amount || 0
     }
   }
-  return [...groups.values()].filter((g) => g.qty > EPS || g.invested > EPS).map((g) => toHolding(g, 'My MFs'))
+  return [...groups.values()].filter((g) => g.qty > EPS || g.invested > EPS).map((g) => toHolding(g, source))
 }
 
-// Replace the sheet-based INDmoney holdings with transaction-derived ones.
-// Each side kicks in only when its transactions exist, so a drag-and-drop of
-// just the old holdings sheets still works.
+// Replace the sheet-based holdings with transaction-derived ones. Each side
+// kicks in only when its transactions exist, so a drag-and-drop of just the old
+// holdings sheets still works.
+//
+// Both sides keep a per-POSITION fallback: a scrip or fund still on the
+// (retired) holdings paste that the transaction sheet has no rows for is left
+// alone rather than dropped. A position must never disappear because its
+// opening-balance row hasn't been added yet — the stale value is wrong, but
+// silently losing lakhs is worse. Once the paste is gone the fallback has
+// nothing to hold and goes dormant.
+const equityKey = (h) => h.symbol || nameKeyOf(h)
+
 export function withDerivedHoldings(holdings = [], transactions = [], mfTransactions = []) {
   let out = holdings
-  const equity = deriveEquityHoldings(transactions)
-  if (equity.length) out = out.filter((h) => h.source !== 'My Stocks').concat(equity)
-  const mfs = deriveMfHoldings(mfTransactions)
-  if (mfs.length) out = out.filter((h) => h.source !== 'My MFs').concat(mfs)
+  const replace = (src, derived, keyOf) => {
+    if (!derived.length) return
+    const keys = new Set(derived.map(keyOf))
+    out = out.filter((h) => h.source !== src || !keys.has(keyOf(h))).concat(derived)
+  }
+  for (const src of DERIVED_EQUITY_SOURCES) {
+    replace(src, deriveEquityHoldings(transactions, src), equityKey)
+  }
+  for (const src of DERIVED_MF_SOURCES) {
+    replace(src, deriveMfHoldings(mfTransactions, src), nameKeyOf)
+  }
   return out
 }

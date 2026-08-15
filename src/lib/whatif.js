@@ -47,7 +47,7 @@ const nameKey = (n) => (n || '').trim().toLowerCase()
 // Resolve a fund to its AMFI scheme + NAV history. Returns null when the fund
 // can't be priced, which is also what makes it uncharteable.
 function priceable(name, weight, source, navMap) {
-  const scheme = schemeFor(name)
+  const scheme = schemeFor(name, source)
   const nav = scheme ? navMap.get(scheme.schemeCode) : null
   if (!nav?.history?.length) return null
   return { name, weight, source, nav, code: scheme.schemeCode, plan: scheme.plan }

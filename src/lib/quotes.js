@@ -224,6 +224,12 @@ export function enrichHoldings(holdings, priceMap) {
   return holdings.map((h) => {
     const price = priceMap?.get?.(normalize(h.symbol))
     if ((h.type !== 'stock' && h.type !== 'etf') || price == null || h.qty == null) {
+      // A derived holding with no ticker can never be priced — it silently sits
+      // at cost forever. Say so, the same way navs.js does for unmatched funds:
+      // the fix is one line in resources/name-symbols.json.
+      if ((h.type === 'stock' || h.type === 'etf') && !h.symbol) {
+        console.warn(`[quotes] no NSE symbol for "${h.name}" (${h.source}) — add it to resources/name-symbols.json; carried at cost`)
+      }
       return { ...h, marketPrice: h.marketPrice ?? null }
     }
     const current = h.qty * price

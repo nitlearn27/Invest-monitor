@@ -25,26 +25,40 @@ holdings.
 
 ## Getting the data in
 
-Only **2 INDmoney Google Sheets** need upkeep in your Drive folder. Each is a
-simple copy-paste of an INDmoney web page into a blank Google Sheet:
+Only **transaction sheets** need upkeep in your Drive folder. Each is a simple
+copy-paste of a broker's web page into a blank Google Sheet:
 
-| Sheet | Copy this INDmoney page into it |
+| Sheet | Copy this page into it |
 |---|---|
-| **Stocks Transactions** | My Stocks → **Orders** (your executed buys/sells) |
-| **MF Transactions** | Mutual Funds → **Transactions** (the *Buy/Sell* list) |
+| **Stocks Transactions** | INDmoney → My Stocks → **Orders** (executed buys/sells) |
+| **MF Transactions** | INDmoney → Mutual Funds → **Transactions** (the *Buy/Sell* list) |
+| **MF Groww Transactions** | Groww → Mutual Funds → **Orders / Transactions** |
+| **Groww Stocks Transactions** | Groww → Stocks → **Orders** |
 
 Current **holdings are derived automatically** from the transactions — qty and
 invested by summing your orders, current value & P&L from live prices/NAVs. The
-old *My Stocks* / *My MFs* holdings sheets are no longer needed (if they're
-still in the folder, they're ignored).
+old *My Stocks* / *My MFs* / *MF Groww* / *Stocks Groww* holdings sheets are no
+longer needed (if they're still in the folder, any position the transactions
+already cover is ignored).
 
 Two things matter for the derivation to stay correct:
 
 - **Paste the complete order history every time** (scroll to the end of the
-  INDmoney page). A partial paste silently shrinks your derived holdings.
-- **Purchases that predate the transactions page** (old lump sums) can be added
-  as ordinary rows in *MF Transactions* — date, scheme name, amount and units
-  are enough (NAV can be blank).
+  broker's page). A partial paste silently shrinks your derived holdings.
+- **Positions that predate the transactions page** — old lump sums, or something
+  you stopped adding to but still hold — need one row each so the app knows you
+  own them. On INDmoney they go in as ordinary rows in *MF Transactions*. On
+  Groww, add an **`Opening`** row to the matching transactions sheet:
+
+  | Sheet | Set | Put the position's… |
+  |---|---|---|
+  | *MF Groww Transactions* | Type = `Opening` | **units** and **invested amount** |
+  | *Groww Stocks Transactions* | Order Type = `Opening` | **quantity** and **average price** |
+
+  The date can be anything — nothing is calculated from it. The app then values
+  the position live every day, but never counts it as money you added that
+  month. (For stocks/ETFs, add the ticker to `resources/name-symbols.json` if
+  the name isn't already an NSE symbol, or it can't be priced.)
 
 The app figures out which sheet is which by its **content**, so the file names
 can be anything. Just paste the whole page — the rest of the page (menus, ads,

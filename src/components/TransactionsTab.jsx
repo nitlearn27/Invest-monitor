@@ -50,16 +50,18 @@ export default function TransactionsTab({ holdings, transactions, mfTransactions
   }, [mfTransactions, activeSource])
 
   // MF transactions carry units/nav/amount; map them onto the equity table's
-  // field names (qty/price/value) so the same columns render both.
+  // field names (qty/price/value) so the same columns render both. Opening
+  // balances are a position carried in, not money moved on that day — labelled
+  // apart on both sides so they never read as a giant buy.
   const allTxns = useMemo(
     () => [
-      ...filteredTransactions,
+      ...filteredTransactions.map((t) => (t.opening ? { ...t, side: 'OPENING' } : t)),
       ...filteredMfTransactions.map((t) => ({
         date: t.date,
         name: t.name,
         symbol: null,
         type: 'mf',
-        side: t.side,
+        side: t.opening ? 'OPENING' : t.side,
         qty: t.units,
         price: t.nav,
         value: t.amount,
@@ -93,7 +95,10 @@ export default function TransactionsTab({ holdings, transactions, mfTransactions
     {
       key: 'side',
       label: 'Type',
-      render: (r) => <span className={`badge badge--${r.side === 'BUY' ? 'ok' : 'warn'}`}>{r.side}</span>,
+      render: (r) => {
+        const tone = r.side === 'BUY' ? 'ok' : r.side === 'SELL' ? 'warn' : 'muted-badge'
+        return <span className={`badge badge--${tone}`}>{r.side}</span>
+      },
     },
   ]
 
