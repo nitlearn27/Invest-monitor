@@ -15,6 +15,7 @@ import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
 import { fetchQuotes, fetchPriceHistory, enrichHoldings } from '../lib/quotes.js'
 import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor, mfKey } from '../lib/navs.js'
+import { MARKET_CODES } from '../lib/market.js'
 import { withDerivedHoldings } from '../lib/derive.js'
 import { withRecurringSips } from '../lib/monthly.js'
 
@@ -130,6 +131,10 @@ export default function Dashboard() {
         ...new Set([
           ...schemeCodesFor(dataset.holdings, false),
           ...schemeCodesFor(dataset.mfTransactions, true),
+          // Index funds standing in for the mid/small-cap market on the
+          // Consolidated tab — pinned, so the series doesn't change shape when
+          // the user buys or sells a fund.
+          ...MARKET_CODES,
         ]),
       ]
       if (codes.length === 0) return

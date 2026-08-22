@@ -3081,3 +3081,76 @@ button.gpulse:focus-visible {
     animation: none;
   }
 }
+
+/* Market band + split-bar tooltip on the goal card's monthly-investment chart. */
+.gtrack__bandlabel {
+  fill: var(--text-mute);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.gtrack__cross {
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1;
+}
+.gtrack__mkttip {
+  position: absolute;
+  top: 2px;
+  min-width: 176px;
+  background: rgba(8, 20, 40, 0.96);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  z-index: 4;
+}
+.gtrack__mkttip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding-bottom: 5px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.gtrack__mkttip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  padding: 1.5px 0;
+}
+.gtrack__mkttip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.gtrack__mkttip-name {
+  color: var(--text-dim);
+  flex: 1;
+}
+.gtrack__mkttip-mkt {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gtrack__mkttip-mkt.pos {
+  color: var(--pos);
+}
+.gtrack__mkttip-mkt.neg {
+  color: var(--neg);
+}
+.gtrack__mkttip-put {
+  min-width: 46px;
+  text-align: right;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.gtrack__mkttip-foot {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--text-mute);
+}

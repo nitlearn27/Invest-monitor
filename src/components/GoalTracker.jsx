@@ -12,6 +12,7 @@
 // on mobile the card chrome is dropped entirely (see App.css).
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { goalProgress, projectToGoal } from '../lib/goal.js'
+import { marketVsBuys } from '../lib/market.js'
 import ReturnSheet from './ReturnSheet.jsx'
 import { CORPUS_GOAL } from '../config.js'
 import { formatINR, formatINRCompact, formatPct, formatDate } from '../lib/format.js'
@@ -317,24 +318,61 @@ function JourneyChart({ g, projection }) {
 
 // Pace chart: what actually went in, month by month — the "this month against
 // last month" read — with the trailing average as a reference line.
-function PaceChart({ months, avg }) {
+//
+// Two bands on ONE shared time axis:
+//   top    — how the mid/small-cap MARKET moved (index-fund NAV, rebased to 100)
+//   bottom — the monthly-total bars, each split into the mid/small slice of that
+//            month's money and everything else
+// Deliberately two bands rather than lines overlaid on the bars: rupees and
+// index level share no unit, so drawing them against one y-scale would invent a
+// correlation the data doesn't hold. One crosshair spans both, which is what
+// makes "was I buying into a fall or a rally?" readable.
+function PaceChart({ months, avg, market = null, split = null, segments = [] }) {
   const wrapRef = useRef(null)
   const width = useWidth(wrapRef)
-  const height = 190
-  const pad = { l: 4, r: 4, t: 22, b: 22 }
   const [hover, setHover] = useState(null)
 
   const shown = months.slice(-MONTH_BARS)
+  const hasMarket = !!market && shown.some((m) => market.get(m.month)?.rebased)
+
+  const pad = { l: 4, r: 4, t: 22, b: 22 }
+  const mktH = hasMarket ? 56 : 0
+  const mktGap = hasMarket ? 18 : 0
+  const barH = 132
+  const mktTop = pad.t
+  const mktBot = mktTop + mktH
+  const y0 = mktBot + mktGap + barH
+  const height = y0 + pad.b
+
   const max = Math.max(...shown.map((m) => Math.abs(m.added)), avg, 1)
-  const plotH = height - pad.t - pad.b
   const slot = (width - pad.l - pad.r) / shown.length
   const barW = Math.max(8, Math.min(38, slot * 0.66))
-  const y0 = pad.t + plotH
-  const avgY = y0 - (avg / max) * plotH
+  const avgY = y0 - (avg / max) * barH
+  const cxOf = (i) => pad.l + slot * (i + 0.5)
+
+  // Market band scale — both segments rebased to 100 at the window start, so
+  // one axis carries both and the band compares shape, not NAV size.
+  const mkt = useMemo(() => {
+    if (!hasMarket) return null
+    const vals = []
+    for (const m of shown) {
+      const r = market.get(m.month)?.rebased
+      if (!r) continue
+      for (const s of segments) if (r[s.key] != null) vals.push(r[s.key])
+    }
+    if (!vals.length) return null
+    const lo = Math.min(...vals)
+    const hi = Math.max(...vals)
+    const padv = (hi - lo) * 0.16 || 4
+    return { min: lo - padv, max: hi + padv }
+  }, [hasMarket, shown, market, segments])
+
+  const mY = (v) => mktBot - ((v - mkt.min) / (mkt.max - mkt.min || 1)) * mktH
 
   // Every bar carries its own value on top: no hunting in a tooltip, and the
   // "am I ahead of my usual month?" read is the bar against the average line.
   const labelEvery = slot < 34 ? 2 : 1
+  const active = hover != null ? shown[hover] : null
 
   return (
     <div ref={wrapRef} className="gtrack__chart" onPointerLeave={() => setHover(null)}>
@@ -345,6 +383,53 @@ function PaceChart({ months, avg }) {
             <stop offset="100%" stopColor={CORPUS} stopOpacity="0.35" />
           </linearGradient>
         </defs>
+
+        {/* ---- market band ---- */}
+        {mkt && (
+          <>
+            <text x={pad.l} y={mktTop - 7} className="gtrack__bandlabel">
+              Mid &amp; small cap market
+            </text>
+            {segments.map((s) => {
+              const pts = shown.map((m, i) => {
+                const v = market.get(m.month)?.rebased?.[s.key]
+                return { v: v == null ? null : v, x: cxOf(i), y: v == null ? null : mY(v) }
+              })
+              // A month the index has no history for breaks the line rather
+              // than joining across the gap.
+              const runs = []
+              let cur = []
+              for (const p of pts) {
+                if (p.v == null) {
+                  if (cur.length) runs.push(cur)
+                  cur = []
+                } else cur.push(p)
+              }
+              if (cur.length) runs.push(cur)
+              return (
+                <g key={s.key}>
+                  {runs.map((r, i) => (
+                    <path
+                      key={i}
+                      d={r.map((p, j) => `${j ? 'L' : 'M'}${p.x} ${p.y}`).join(' ')}
+                      fill="none"
+                      stroke={s.color}
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                  {hover != null && pts[hover]?.v != null && (
+                    <circle cx={pts[hover].x} cy={pts[hover].y} r="4" fill={s.color} stroke="var(--bg)" strokeWidth="2" />
+                  )}
+                </g>
+              )
+            })}
+            <line x1={pad.l} x2={width - pad.r} y1={mktBot + 7} y2={mktBot + 7} className="gtrack__grid" />
+          </>
+        )}
+
+        {/* ---- monthly bars, split by cap ---- */}
         {avg > 0 && (
           <>
             <line x1={pad.l} x2={width - pad.r} y1={avgY} y2={avgY} className="gtrack__avgline" />
@@ -354,24 +439,55 @@ function PaceChart({ months, avg }) {
           </>
         )}
         {shown.map((m, i) => {
-          const h = Math.max(2, (Math.abs(m.added) / max) * plotH)
-          const cx = pad.l + slot * (i + 0.5)
+          const total = Math.abs(m.added)
+          const h = Math.max(2, (total / max) * barH)
+          const cx = cxOf(i)
           const last = i === shown.length - 1
           const on = hover === i || (hover == null && last)
+          const parts = split?.get(m.month) || {}
+          // Mid/small sit at the foot of the bar, the rest of the month's money
+          // above them: the bar keeps its true total height (so the average line
+          // still means what it did) while showing how much went to these two.
+          // The stack is clamped to the bar it sits in: goal.js's `added` and the
+          // MF transaction sum are computed independently, and a disagreement
+          // must show as a full bar, never as a segment poking out the top.
+          let acc = 0
+          const stack = []
+          for (const s of segments) {
+            const v = parts[s.key] || 0
+            if (v <= 0 || total <= 0) continue
+            const sh = Math.min((v / max) * barH, h - acc)
+            if (sh <= 0) break
+            stack.push({ key: s.key, color: s.color, y: y0 - acc - sh, h: sh })
+            acc += sh
+          }
+          const restH = Math.max(0, h - acc)
           return (
             <g key={m.month} onPointerEnter={() => setHover(i)}>
-              <rect x={cx - slot / 2} y={pad.t} width={slot} height={plotH} fill="transparent" />
-              <rect
-                x={cx - barW / 2}
-                y={y0 - h}
-                width={barW}
-                height={h}
-                rx={4}
-                fill={m.added < 0 ? 'var(--neg)' : 'url(#gtrack-bar)'}
-                opacity={on ? 1 : 0.5}
-              >
-                <title>{`${m.label}: ${formatINR(m.added)}`}</title>
-              </rect>
+              <rect x={cx - slot / 2} y={mktTop} width={slot} height={y0 - mktTop} fill="transparent" />
+              {restH > 0 && (
+                <rect
+                  x={cx - barW / 2}
+                  y={y0 - acc - restH}
+                  width={barW}
+                  height={restH}
+                  rx={4}
+                  fill={m.added < 0 ? 'var(--neg)' : 'url(#gtrack-bar)'}
+                  opacity={on ? 1 : 0.5}
+                />
+              )}
+              {stack.map((s) => (
+                <rect
+                  key={s.key}
+                  x={cx - barW / 2}
+                  y={s.y}
+                  width={barW}
+                  height={Math.max(1, s.h - 1)}
+                  rx={2}
+                  fill={s.color}
+                  opacity={on ? 0.95 : 0.45}
+                />
+              ))}
               {(shown.length - 1 - i) % labelEvery === 0 && (
                 <text
                   x={cx}
@@ -390,8 +506,38 @@ function PaceChart({ months, avg }) {
             </g>
           )
         })}
+        {hover != null && mkt && (
+          <line x1={cxOf(hover)} x2={cxOf(hover)} y1={mktTop} y2={y0} className="gtrack__cross" />
+        )}
         <line x1={pad.l} x2={width - pad.r} y1={y0} y2={y0} className="gtrack__grid" />
       </svg>
+
+      {active && mkt && (
+        <div
+          className="gtrack__mkttip"
+          style={{ left: Math.min(Math.max(cxOf(hover), 88), Math.max(88, width - 88)), transform: 'translateX(-50%)' }}
+        >
+          <div className="gtrack__mkttip-head">
+            <span>{active.label}</span>
+            <span>{formatINRCompact(active.added)}</span>
+          </div>
+          {segments.map((s) => {
+            const ch = market.get(active.month)?.change?.[s.key]
+            const put = split?.get(active.month)?.[s.key] || 0
+            return (
+              <div key={s.key} className="gtrack__mkttip-row">
+                <span className="gtrack__mkttip-dot" style={{ background: s.color }} />
+                <span className="gtrack__mkttip-name">{s.label}</span>
+                <span className={`gtrack__mkttip-mkt ${ch >= 0 ? 'pos' : 'neg'}`}>
+                  {ch == null ? '—' : `${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%`}
+                </span>
+                <span className="gtrack__mkttip-put">{put ? formatINRCompact(put) : '—'}</span>
+              </div>
+            )
+          })}
+          <div className="gtrack__mkttip-foot">market move · what you put in</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -415,6 +561,19 @@ export default function GoalTracker({
   const [rate, setRate] = useState(0.1)
   const [planOpen, setPlanOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  // Market band + per-cap split for the monthly-investment chart, keyed by
+  // month so the chart stays driven by goal.js's own month rows.
+  const pace = useMemo(() => {
+    const { rows, segments } = marketVsBuys(navMap, mfTransactions, { months: MONTH_BARS })
+    const market = new Map()
+    const split = new Map()
+    for (const r of rows) {
+      market.set(r.month, { rebased: r.rebased, change: r.change })
+      split.set(r.month, r.invested)
+    }
+    return { market, split, segments }
+  }, [navMap, mfTransactions])
 
   const monthly = planned ?? (g ? Math.round(g.avg6 / 1000) * 1000 : 0)
   const projection = useMemo(
@@ -616,7 +775,13 @@ export default function GoalTracker({
           <h4 className="gtrack__section-title">Monthly investment</h4>
           <span className="gtrack__section-note">last {Math.min(MONTH_BARS, g.months.length)} months</span>
         </div>
-        <PaceChart months={g.months} avg={g.avg6} />
+        <PaceChart
+          months={g.months}
+          avg={g.avg6}
+          market={pace.market}
+          split={pace.split}
+          segments={pace.segments}
+        />
       </section>
 
       {sheetOpen && <ReturnSheet detail={g.detail} onClose={() => setSheetOpen(false)} />}

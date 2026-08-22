@@ -181,6 +181,32 @@ recomputed live. **Never fabricate values.**
   tying to the corpus series) — the sheet states the combined figure in words.
   A baseline holding with no NAV/price match lands in `detail.unpriced` and the
   sheet names it, so an unmapped fund is visible instead of silently missing.
+- **Market band on the pace chart** (`market.js` → `PaceChart` inside
+  `GoalTracker`). The goal card's "Monthly investment" chart carries two bands
+  on ONE shared time axis: the mid/small-cap **market** above (index-fund NAV,
+  rebased to 100 across the window) and the monthly-total bars below, each bar
+  **split** into its mid slice, its small slice, and everything else. Bars keep
+  their true total height, so the 6-mo average line still means what it did.
+  It is deliberately NOT lines overlaid on the bars — rupees and index level
+  share no unit, so one y-scale would invent a correlation the data doesn't
+  hold; one crosshair spans both bands, which is what makes "was I buying into
+  a fall or a rally?" readable. No separate card or mobile rail section: the
+  user asked for this chart updated, not a new one.
+  - Market proxy = **pinned Direct-plan index funds** (Nippon Nifty Midcap 150
+    `148726`, Nifty Smallcap 250 `148519`) pulled through the existing
+    `fetchNavs` (CORS-safe, cached, never throws); `MARKET_CODES` is unioned
+    into Dashboard's `loadNavs`. Pinned so the series can't change shape because
+    the user bought or sold a fund.
+  - `navOn` clamps to the oldest entry, so a month predating the fund would
+    report its **launch NAV** as that month's level; `marketVsBuys` tests the
+    month against the history's oldest date first and emits null, breaking the
+    line instead.
+  - The cap stack is **clamped to the bar height**: goal.js's `added` and the MF
+    transaction sum are computed independently, and a disagreement must show as
+    a full bar, never a segment poking out the top.
+  - Scope is **mid + small only**; add a row to `MARKET_SEGMENTS` to extend it.
+    Colors are the `capOf` donut colors (validated as a pair for CVD separation
+    and contrast on the navy surface), so a segment keeps one identity.
 - Hardcoded ₹10k/month Edelweiss Mid Cap SIP injected via `RECURRING_SIPS` in
   `monthly.js` — it's absent from the MF sheet; a same-day guard prevents
   double counting. The SIP **must have an explicit `start`** (`'2025-05'`,
@@ -195,7 +221,8 @@ recomputed live. **Never fabricate values.**
 - `src/lib/` — drive, parse, classify, derive (txns → INDmoney + Groww MF
   holdings; `DERIVED_MF_SOURCES` lists the MF sheets complete enough to do it
   from — Axis/Coin have no transaction sheet, so their pastes stay), goal
-  (corpus-vs-goal series), quotes, navs, portfolio, reconcile, monthly, whatif
+  (corpus-vs-goal series), market (mid/small-cap market level vs monthly
+  contributions), quotes, navs, portfolio, reconcile, monthly, whatif
   (per-category buy simulation), sourceStyle, format
 - `src/components/` — Dashboard (loads data, owns tabs), AppBar, SummaryCard,
   AllocationDonut, HoldingsTable (generic sortable; optional `className` for a
