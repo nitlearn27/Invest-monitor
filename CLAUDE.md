@@ -99,8 +99,16 @@ The sheet supplies only qty/avgPrice/invested; current/marketPrice/P&L are
 recomputed live. **Never fabricate values.**
 - Stocks/ETFs: Yahoo spark `<SYMBOL>.NS` via the `VITE_PRICE_PROXY` Worker
   (Yahoo has no CORS). `src/lib/quotes.js`: `fetchQuotes` (batched, 10-min
-  localStorage TTL, never throws) + `enrichHoldings` (pure). Name→NSE-ticker
-  maps live in committed `resources/name-symbols.json` (`{indmoney, groww}`,
+  localStorage TTL, never throws) + `enrichHoldings` (pure). `fetchQuotes`
+  returns `Map<symbol, { price, prev }>` — `prev` is the spark meta's
+  `chartPreviousClose`, and it is what gives equities the **1D P&L** column the
+  MF tab already had. `prev` is deliberately **null** when the entry carries no
+  intraday close and the previous close stands in as the price: a 0.00% move
+  there would be fabricated, not a flat day. `priceOn(series, date)` reads the
+  daily-close history on a **calendar date** (same reasoning as `navOn`) but
+  returns null before the history starts instead of clamping — every equity
+  caller is drawing a line, and clamping would draw a flat run that never
+  happened. Name→NSE-ticker maps live in committed `resources/name-symbols.json` (`{indmoney, groww}`,
   hand-maintained — add a line when a new descriptively-named scrip appears in
   the transactions; keys must cover the **transaction-sheet names**, since
   derived holdings get their symbol from the transactions); resolvers
@@ -223,11 +231,17 @@ recomputed live. **Never fabricate values.**
   from — Axis/Coin have no transaction sheet, so their pastes stay), goal
   (corpus-vs-goal series), market (mid/small-cap market level vs monthly
   contributions), quotes, navs, portfolio, reconcile, monthly, whatif
-  (per-category buy simulation), sourceStyle, format
+  (buy simulation — `whatIfByCategory` per MF market-cap category and
+  `equityWhatIf` per equity asset class; both emit the SAME card shape so one
+  renderer draws all three tabs), sourceStyle, format
 - `src/components/` — Dashboard (loads data, owns tabs), AppBar, SummaryCard,
   AllocationDonut, HoldingsTable (generic sortable; optional `className` for a
-  scrollable variant), AssetTab (optional `foldTo`/`rankOf` props — the MF tab
-  passes `foldTo={5}` + a last-buy-recency rank from Dashboard's `mfLastBuy`
+  scrollable variant), AssetTab (ONE column vocabulary (`COLS`) with a
+  per-type `order`, so Stocks, ETFs and Mutual Funds scan identically: name +
+  broker initial → **1D P&L** → Total P&L % → P&L → qty → (avg price, market
+  price: equity only) → invested → current. The footer is built from the same
+  `order`, so a column added to one tab can't silently misalign the totals row.
+  Optional `foldTo`/`rankOf` props — the MF tab passes `foldTo={5}` + a last-buy-recency rank from Dashboard's `mfLastBuy`
   map, so 5 recently-bought funds show up front and "See all" expands to a
   scrollable table with sticky header), ConsolidatedTab, GoalTracker (goal card
   + journey/pace SVG charts + pulse tiles with their own micro-charts; card
@@ -235,6 +249,27 @@ recomputed live. **Never fabricate values.**
   (this-month return breakdown; portalled to `<body>` — the `.card`
   backdrop-filter would otherwise contain `position:fixed`),
   TransactionsTab, ReconcilePanel, StateViews, SourceLegend, FileDropzone,
+  WhatIfCard (the buying-pattern card chrome — `LineChart`, `ReturnStrip`,
+  the trend/what-if toggle, the range picker — shared by ALL THREE asset tabs.
+  Everything that differs between funds and equities arrives as one `spec`
+  object: `noun`/`colHead`/`trendLabel`/`historyNoun`, `shorten`, `colorOf`,
+  `dashOf`, `brokerOf`, `shortLabel`/`fullLabel`, `tagOf`, `note`. Add a tab by
+  writing a spec, not by copying the card),
+  EquityWhatIf (Stocks/ETF twin of MfWhatIf: ONE card per asset class, top
+  `PICKS` (4) scrips by money in. Differences from the MF side, both because
+  equities have no plans and no per-broker pricing: (a) a scrip prices the same
+  wherever it is held, so candidates dedupe by **symbol**, colour is keyed to
+  the scrip's rank from one 4-hue palette, nothing is dashed, and the series
+  labels carry **no broker** — "All-in Infosys · Groww" would imply the
+  counterfactual depends on the platform; the leaderboard's per-broker dots
+  carry that instead. (b) Sells are real, so money-in is **net of proceeds** and
+  the counterfactual moves the same rupees on the same day — a position closed
+  out still reports its profit (in the shrunken "money in") instead of vanishing
+  with its units; the alt can't sell what it never accumulated, so an oversized
+  redemption just empties it. Chip percentages are suppressed when net money-in
+  is ≤ 0, since there is no positive base to divide by. Both equity brokers keep
+  a transaction sheet, so every buy is a real cashflow — unlike the MF card,
+  there is no comparison-only broker),
   MfWhatIf (MF-tab buying-pattern analysis: per market-cap category, replays
   the INDmoney buys "all-in" each **candidate** fund of that category —
   gain-over-invested lines (raw value would hide the differences under the
@@ -244,9 +279,13 @@ recomputed live. **Never fabricate values.**
   the holdings snapshot's `invested`), deduped by AMFI scheme code — Coin has
   no txn sheet, so its funds are comparison-only, carry no buy markers, and
   never enter the "Your buys" line; a category with no priceable INDmoney buy
-  has no cashflows and so no card. Broker is double-encoded — INDmoney solid,
-  Coin dashed — and each broker owns a colour pair indexed by the fund's `slot`
-  within it. "Your buys" is valued from **every** INDmoney fund of the
+  has no cashflows and so no card. A fund that *is* transacted but can't be
+  priced (missing from `mf-schemes.json`) has its buys dropped from the replay
+  entirely and its name listed on the card (`unpriced`) — counting the money as
+  invested while showing it at zero value would make "Your buys" look worse than
+  it was. `equityWhatIf` does the same for a scrip with no ticker. Broker is
+  double-encoded — INDmoney solid, Coin dashed — and each broker owns a colour
+  pair indexed by the fund's `slot` within it. "Your buys" is valued from **every** INDmoney fund of the
   category, not just the two charted (uncharted ones are named in the card
   subtitle). `histStart` comes from the INDmoney picks alone and a Coin
   candidate whose NAV history starts later is **skipped** rather than charted —

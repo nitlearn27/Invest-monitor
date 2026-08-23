@@ -6,6 +6,7 @@ import MonthlyTab from './MonthlyTab.jsx'
 import AssetTab from './AssetTab.jsx'
 import TransactionsTab from './TransactionsTab.jsx'
 import MfWhatIf from './MfWhatIf.jsx'
+import EquityWhatIf from './EquityWhatIf.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
 import ProjectionTab from './ProjectionTab.jsx'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
@@ -41,11 +42,13 @@ export default function Dashboard() {
   const [tab, setTab] = useState('consolidated')
   // Deep link from the goal card's "this month" tiles into the Monthly tab.
   const [monthFocus, setMonthFocus] = useState(null)
-  // Live market prices for stocks/ETFs (Map<symbol, price>); the sheet's stale
-  // "Current value" is used as a fallback for anything not resolved here.
+  // Live market prices for stocks/ETFs (Map<symbol, { price, prev }>, prev being
+  // the previous session's close, which is what makes a 1-day move computable);
+  // the sheet's stale "Current value" is the fallback for anything unresolved.
   const [priceMap, setPriceMap] = useState(() => new Map())
-  // Daily close history for the same symbols — only the Consolidated goal chart
-  // needs it, to value past holdings on the day they were held.
+  // Daily close history for the same symbols — the Consolidated goal chart
+  // values past holdings on the day they were held with it, and the Stocks/ETF
+  // buying-pattern cards replay the buys against it.
   const [priceHistory, setPriceHistory] = useState(() => new Map())
   const [pricesAt, setPricesAt] = useState(null)
   const [pricesBusy, setPricesBusy] = useState(false)
@@ -255,7 +258,18 @@ export default function Dashboard() {
                 focusMonth={monthFocus}
               />
             )}
-            {tab === 'stock' && <AssetTab type="stock" label="Stocks" holdings={view.holdings} />}
+            {tab === 'stock' && (
+              <>
+                <AssetTab type="stock" label="Stocks" holdings={view.holdings} />
+                <EquityWhatIf
+                  type="stock"
+                  label="Stocks"
+                  transactions={view.transactions}
+                  holdings={view.holdings}
+                  priceHistory={priceHistory}
+                />
+              </>
+            )}
             {tab === 'mf' && (
               <>
                 <AssetTab
@@ -272,7 +286,18 @@ export default function Dashboard() {
                 />
               </>
             )}
-            {tab === 'etf' && <AssetTab type="etf" label="ETFs" holdings={view.holdings} />}
+            {tab === 'etf' && (
+              <>
+                <AssetTab type="etf" label="ETFs" holdings={view.holdings} />
+                <EquityWhatIf
+                  type="etf"
+                  label="ETFs"
+                  transactions={view.transactions}
+                  holdings={view.holdings}
+                  priceHistory={priceHistory}
+                />
+              </>
+            )}
             {tab === 'transactions' && (
               <TransactionsTab
                 holdings={view.holdings}

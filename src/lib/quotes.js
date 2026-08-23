@@ -18,7 +18,7 @@ const SPARK = 'https://query1.finance.yahoo.com/v8/finance/spark'
 const SUFFIX = '.NS' // NSE
 const CHUNK = 40 // symbols per request (keeps the proxied URL a sane length)
 const TTL_MS = 10 * 60 * 1000 // reuse a price for 10 min before refetching
-const CACHE_KEY = 'invest-monitor:prices:v1'
+const CACHE_KEY = 'invest-monitor:prices:v2'
 
 // INDmoney symbol -> full Yahoo symbol, for names that don't map to "<SYM>.NS"
 // (e.g. BSE-only scrips needing ".BO"). Populate as mismatches surface. Keys are
@@ -29,7 +29,7 @@ const normalize = (s) => String(s || '').trim().toUpperCase()
 const yahooSymbol = (sym) => SYMBOL_OVERRIDES[sym] || `${sym}${SUFFIX}`
 const proxied = (url) => `${PRICE.proxy}${encodeURIComponent(url)}`
 
-// --- localStorage price cache: { [symbol]: { price, ts } } -------------------
+// --- localStorage price cache: { [symbol]: { price, prev, ts } } -------------
 function readCache() {
   try {
     return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}
@@ -52,17 +52,30 @@ const chunk = (arr, n) => {
   return out
 }
 
-// Latest price from a Yahoo spark entry: last finite `close`, else prev close.
-function priceFrom(entry) {
-  if (!entry) return null
-  const closes = Array.isArray(entry.close) ? entry.close.filter((v) => Number.isFinite(v)) : []
-  const v = closes.length ? closes[closes.length - 1] : Number(entry.chartPreviousClose)
-  return Number.isFinite(v) && v > 0 ? v : null
+// Latest price + the previous session's close from a Yahoo spark entry, as
+// { price, prev }. The two response shapes nest things differently: the flat one
+// carries `close` and `chartPreviousClose` on the entry itself, the wrapped one
+// splits them into `meta` and `indicators.quote[0].close`.
+//
+// `prev` is what makes a 1-day move computable. It is deliberately NULLED when
+// the entry has no intraday close and we fall back to the previous close as the
+// price — reporting a 0.00% move there would be a fabricated figure, not a flat
+// day.
+function quoteFrom(node) {
+  if (!node) return { price: null, prev: null }
+  const meta = node.meta || node
+  const raw = Array.isArray(node.close) ? node.close : node.indicators?.quote?.[0]?.close
+  const closes = Array.isArray(raw) ? raw.filter((v) => Number.isFinite(v) && v > 0) : []
+  const last = closes.length ? closes[closes.length - 1] : null
+  const prevRaw = Number(meta.chartPreviousClose ?? meta.previousClose)
+  const prev = Number.isFinite(prevRaw) && prevRaw > 0 ? prevRaw : null
+  if (last != null) return { price: last, prev }
+  return { price: prev, prev: null }
 }
 
-// Fetch one chunk -> { yahooSymbol: price|null }. The spark response is keyed by
-// symbol directly, or nested under { spark: { result: [...] } } depending on the
-// endpoint/proxy; handle both.
+// Fetch one chunk -> { yahooSymbol: { price, prev } }. The spark response is
+// keyed by symbol directly, or nested under { spark: { result: [...] } }
+// depending on the endpoint/proxy; handle both.
 async function fetchChunk(ySymbols) {
   const url = `${SPARK}?symbols=${ySymbols.join(',')}&range=1d&interval=1d`
   const res = await fetch(proxied(url))
@@ -71,16 +84,17 @@ async function fetchChunk(ySymbols) {
   const out = {}
   const results = data?.spark?.result
   if (Array.isArray(results)) {
-    for (const r of results) out[r.symbol] = priceFrom(r.response?.[0]?.meta || r.response?.[0])
+    for (const r of results) out[r.symbol] = quoteFrom(r.response?.[0])
   } else {
-    for (const sym of ySymbols) out[sym] = priceFrom(data?.[sym])
+    for (const sym of ySymbols) out[sym] = quoteFrom(data?.[sym])
   }
   return out
 }
 
-// Fetch live prices for the given symbols. Returns a Map<symbol, number> (INR).
-// Symbols with a fresh cache entry skip the network. `force` bypasses the TTL
-// (manual Refresh button). Never throws — partial results are returned on error.
+// Fetch live prices for the given symbols. Returns a
+// Map<symbol, { price, prev }> (INR; `prev` = previous session's close, null when
+// unknown). Symbols with a fresh cache entry skip the network. `force` bypasses
+// the TTL (manual Refresh button). Never throws — partial results on error.
 export async function fetchQuotes(symbols, { force = false } = {}) {
   const result = new Map()
   if (!PRICE.proxy) return result
@@ -93,7 +107,7 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
   for (const sym of wanted) {
     const hit = cache[sym]
     if (!force && hit && now - hit.ts < TTL_MS && hit.price != null) {
-      result.set(sym, hit.price)
+      result.set(sym, { price: hit.price, prev: hit.prev ?? null })
     } else {
       stale.push(sym)
     }
@@ -101,17 +115,17 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
 
   for (const group of chunk(stale, CHUNK)) {
     const ySymbols = group.map(yahooSymbol)
-    let prices
+    let quotes
     try {
-      prices = await fetchChunk(ySymbols)
+      quotes = await fetchChunk(ySymbols)
     } catch {
       continue // leave these unresolved; caller falls back to the sheet value
     }
     group.forEach((sym, i) => {
-      const price = prices[ySymbols[i]]
-      if (price != null) {
-        result.set(sym, price)
-        cache[sym] = { price, ts: now }
+      const q = quotes[ySymbols[i]]
+      if (q?.price != null) {
+        result.set(sym, q)
+        cache[sym] = { price: q.price, prev: q.prev, ts: now }
       }
     })
   }
@@ -215,14 +229,44 @@ export async function fetchPriceHistory(symbols, { force = false } = {}) {
   return result
 }
 
+// Close on (or before) a calendar date, from an ascending { t, c } history.
+// Yahoo stamps each candle at the session's opening instant in UTC while our
+// transaction dates are IST midnight, so the compare is against the END of the
+// target day — the same calendar-date reasoning navOn spells out for NAVs.
+// Returns null BEFORE the history starts: unlike navOn (which clamps to the
+// oldest NAV so a snapshot can still be scaled), every equity caller here is
+// drawing a line, and clamping would draw a flat run that never happened.
+export function priceOn(series, date) {
+  const t = series?.t
+  const c = series?.c
+  if (!t?.length) return null
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) return c[c.length - 1]
+  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
+  let lo = 0
+  let hi = t.length - 1
+  let at = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (t[mid] < end) {
+      at = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return at >= 0 ? c[at] : null
+}
+
 // Apply a price map to holdings (pure). Stock/ETF holdings with a resolved price
-// and a qty get a live marketPrice + recomputed current/pnl/pnlPct; everything
-// else (no price, no qty, or MFs) keeps the sheet's current with marketPrice null.
-// Never mutates qty / avgPrice / invested.
+// and a qty get a live marketPrice + recomputed current/pnl/pnlPct + today's
+// move; everything else (no price, no qty, or MFs) keeps the sheet's current
+// with marketPrice null. Never mutates qty / avgPrice / invested.
 export function enrichHoldings(holdings, priceMap) {
   if (!holdings) return holdings
   return holdings.map((h) => {
-    const price = priceMap?.get?.(normalize(h.symbol))
+    const quote = priceMap?.get?.(normalize(h.symbol))
+    const price = quote?.price
     if ((h.type !== 'stock' && h.type !== 'etf') || price == null || h.qty == null) {
       // A derived holding with no ticker can never be priced — it silently sits
       // at cost forever. Say so, the same way navs.js does for unmatched funds:
@@ -234,12 +278,18 @@ export function enrichHoldings(holdings, priceMap) {
     }
     const current = h.qty * price
     const pnl = h.invested != null ? current - h.invested : null
+    // Today's move against the previous session's close — the stock/ETF twin of
+    // the NAV-vs-previous-NAV figure enrichMfHoldings computes for funds, so
+    // every asset tab can lead with the same "1D P&L" column.
+    const prev = quote.prev
     return {
       ...h,
       marketPrice: price,
       current,
       pnl,
       pnlPct: pnl != null && h.invested ? (pnl / h.invested) * 100 : null,
+      oneDayChange: prev ? (price - prev) * h.qty : null,
+      oneDayChangePct: prev ? ((price - prev) / prev) * 100 : null,
     }
   })
 }

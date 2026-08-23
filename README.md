@@ -12,11 +12,18 @@ holdings.
   return — so you see the year the goal actually lands. Plus a monthly-investment
   chart and this-month-vs-last-month corpus figures. Change the target with
   `CORPUS_GOAL` in `src/config.js`
-- **Separate tabs** for Stocks, Mutual Funds and ETFs (with live P&L)
-- **Buying-pattern analysis** on the MF tab: per category (mid/small/large cap…),
-  replays your buys as if they had all gone into each fund of that category —
-  gain-over-invested lines show whether you picked the right fund, and a NAV
-  trend view (rebased to 100, your buys marked) shows the prices you acted on
+- **Separate tabs** for Stocks, Mutual Funds and ETFs — all three read the same
+  way: name and broker, then today's gain, total return, and the position
+  itself, ending in what it's worth now
+- **Buying-pattern analysis** on all three tabs: replays your buys as if they
+  had all gone into each of the top holdings you're being compared against —
+  the *what-if gain* lines show whether you picked the right one, and the
+  *trend* view (rebased to 100, your buys marked) shows the prices you acted on.
+  Mutual funds are compared per category (mid/small/large cap…); stocks and ETFs
+  compare the top 4 you put the most money into
+- **Returns leaderboard** under each trend chart: every fund, stock or ETF you
+  hold on any broker, scored over 1M / 3M / 6M / 1Y / 3Y with the winner of each
+  column highlighted. Tap a column to sort by it
 - **Monthly** view: invested per month split MF vs Stocks & ETFs, per-month MF
   market-cap and stock/ETF donuts, and a per-month transaction breakdown
 - **Transactions** log with a **reconciliation** panel (net traded qty vs current
@@ -105,7 +112,8 @@ current value, market price and P&L are recomputed **live** in the browser:
   with `cd proxy && npx wrangler deploy`, then point `VITE_PRICE_PROXY` at it
   (URL ending in `/?url=`). Leaving it blank falls back to a flaky public
   proxy; setting it empty disables live prices (the sheet's stale value is
-  shown instead). Quotes are cached in localStorage for ~10 minutes.
+  shown instead). Quotes are cached in localStorage for ~10 minutes, and carry
+  the previous session's close so every tab can show a **1-day** gain/loss.
 - **Mutual funds** — NAVs come from [mfapi.in](https://www.mfapi.in/), a free
   no-key mirror of AMFI's daily NAV that allows CORS, so no proxy is needed.
   NAVs are cached for ~12 hours. Each fund is matched to its AMFI scheme code

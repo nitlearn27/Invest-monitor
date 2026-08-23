@@ -1,4 +1,9 @@
-// "What-if" analysis of MF buying decisions, per market-cap category.
+// "What-if" analysis of buying decisions — `whatIfByCategory` for mutual funds
+// (one card per market-cap category) and `equityWhatIf` for stocks/ETFs (one
+// card per asset class). Both emit the SAME card shape, so WhatIfCard.jsx draws
+// the Mutual Funds, Stocks and ETF tabs with one renderer.
+//
+// --- Mutual funds, per market-cap category ------------------------------------
 //
 // For each category (mid/small/large/ELSS/…) take the user's actual INDmoney
 // BUY transactions and simulate the counterfactuals: the same cashflows, on the
@@ -21,6 +26,7 @@
 
 import { capOf } from './monthly.js'
 import { schemeFor, navOn } from './navs.js'
+import { priceOn } from './quotes.js'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -117,10 +123,17 @@ export function whatIfByCategory(mfTransactions = [], navMap, holdings = [], now
       if (!investedByFund.has(k)) investedByFund.set(k, { name: t.name, amount: 0 })
       investedByFund.get(k).amount += t.amount
     }
-    const indAll = [...investedByFund.values()]
-      .sort((a, b) => b.amount - a.amount)
-      .map((f) => priceable(f.name, f.amount, TXN_SOURCE, navMap))
-      .filter(Boolean)
+    // A fund with no scheme match can't be valued, so its buys are left out of
+    // the replay entirely rather than counted as money in that then shows zero
+    // value — that would make "Your buys" look worse than it was. Such funds are
+    // named on the card (and already console.warn from navs.js).
+    const indAll = []
+    const unpriced = []
+    for (const f of [...investedByFund.values()].sort((a, b) => b.amount - a.amount)) {
+      const p = priceable(f.name, f.amount, TXN_SOURCE, navMap)
+      if (p) indAll.push(p)
+      else unpriced.push(f.name)
+    }
 
     // No priceable INDmoney fund means no cashflow to replay — the card would
     // pit a flat "Your buys" line against the alternatives. Only happens when a
@@ -187,8 +200,9 @@ export function whatIfByCategory(mfTransactions = [], navMap, holdings = [], now
     const rank = (r) => r.returns['1y'] ?? r.returns['6m'] ?? -Infinity
     const returnRows = [...rows.values()].sort((a, b) => rank(b) - rank(a))
 
-    const included = cat.txns.filter((t) => t.date.getTime() >= histStart)
-    const excluded = cat.txns.length - included.length
+    const priced = cat.txns.filter((t) => indAll.some((f) => nameKey(f.name) === nameKey(t.name)))
+    const included = priced.filter((t) => t.date.getTime() >= histStart)
+    const excluded = priced.length - included.length
     if (!included.length) continue
 
     const txnTimes = included.map((t) => t.date.getTime())
@@ -226,7 +240,7 @@ export function whatIfByCategory(mfTransactions = [], navMap, holdings = [], now
 
     // NAV trend: each fund rebased to 100 at the first sample; dots on buys.
     // Only INDmoney funds carry buy markers — Coin has no transaction sheet.
-    const nav = funds.map((f) => {
+    const trend = funds.map((f) => {
       const base = navOn(f.nav.history, new Date(samples[0]))
       const values = samples.map((s) => {
         const n = navOn(f.nav.history, new Date(s))
@@ -253,11 +267,12 @@ export function whatIfByCategory(mfTransactions = [], navMap, holdings = [], now
       // INDmoney funds bought in this category but not charted — their buys
       // still sit inside "Your buys" and the invested total.
       unchartedActual: indAll.slice(PICKS_PER_SOURCE).map((f) => f.name),
+      unpriced,
       samples,
       invested,
       actual,
       alts,
-      nav,
+      trend,
       excluded,
       txnCount: included.length,
       investedTotal: investedSoFar,
@@ -266,4 +281,220 @@ export function whatIfByCategory(mfTransactions = [], navMap, holdings = [], now
 
   // Biggest categories first.
   return out.sort((a, b) => b.investedTotal - a.investedTotal)
+}
+
+// --- Equities (stocks / ETFs) -------------------------------------------------
+//
+// The same question the MF cards ask, put to one asset class instead of one
+// market-cap category: replay the money the user actually put in, on the days
+// they put it in, into each of the top few scrips they own, and see which
+// vehicle would have carried it best. A price-trend view (each scrip rebased to
+// 100, buys marked) shows what the decisions were made against.
+//
+// Two things differ from the fund side, both because equities have no plans and
+// no broker-specific pricing:
+//   * BOTH equity brokers keep a transaction sheet, so every buy here is a real
+//     cashflow. A scrip is the same scrip wherever it was bought, so candidates
+//     are deduped by SYMBOL and each carries every broker it was traded on —
+//     which is why colour is keyed to the scrip's rank, with no dash encoding.
+//   * Sells are real. Money in is therefore NET of sale proceeds and the
+//     counterfactual receives exactly the same cashflow on the same day, so a
+//     position that was closed out still reports its profit (in the shrunken
+//     "money in") instead of vanishing along with its units.
+//
+// Prices come from quotes.js's daily-close history (Yahoo, ~5 years) — the same
+// series the goal chart values past holdings with.
+
+const PICKS = 4 // charted candidates: "top 4 stocks" / "top 4 ETFs"
+
+const symKeyOf = (x) => (x.symbol ? String(x.symbol).trim().toUpperCase() : `~${nameKey(x.name)}`)
+
+const historyOf = (symbol, priceHistory) => {
+  const s = symbol ? priceHistory?.get?.(String(symbol).trim().toUpperCase()) : null
+  return s?.t?.length ? s : null
+}
+
+// Point-to-point price return over `days`, annualised past a year. Mirrors
+// periodReturn, including the guard that the history actually reaches back —
+// priceOn returns null before its first close, and a window that starts in that
+// void would otherwise be scored off a shorter span than it claims.
+function periodReturnPx(hist, days, nowT, annualised) {
+  const then = nowT - days * DAY
+  if (hist.t[0] > then + 7 * DAY) return null
+  const base = priceOn(hist, new Date(then))
+  const latest = priceOn(hist, new Date(nowT))
+  if (!base || !latest) return null
+  const r = latest / base - 1
+  return annualised ? (1 + r) ** (365 / days) - 1 : r
+}
+
+// One card for the whole asset class (returned as an array so the section
+// component maps it exactly like the MF categories).
+export function equityWhatIf({
+  transactions = [],
+  holdings = [],
+  priceHistory = null,
+  type = 'stock',
+  label = 'Stocks',
+  now = new Date(),
+} = {}) {
+  if (!priceHistory?.size) return []
+  const nowT = now.getTime()
+
+  // Real money movements only. Opening-balance rows carry a position, not a
+  // purchase, and their date is invented (see classify.js) — replaying one
+  // would put a cashflow on the timeline that never happened.
+  const txns = transactions
+    .filter((t) => t.type === type && t.date && !t.opening && t.qty > 0 && t.price > 0)
+    .sort((a, b) => a.date - b.date)
+  if (!txns.length) return []
+
+  // One entry per scrip, ranked by money put in, carrying every broker it was
+  // traded through.
+  const positions = new Map()
+  for (const t of txns) {
+    const k = symKeyOf(t)
+    if (!positions.has(k)) {
+      positions.set(k, { key: k, name: t.name, symbol: t.symbol || null, sources: [], bought: 0 })
+    }
+    const p = positions.get(k)
+    if (!p.sources.includes(t.source)) p.sources.push(t.source)
+    if (t.side !== 'SELL') p.bought += t.qty * t.price
+  }
+
+  const all = []
+  const unpriced = []
+  for (const p of [...positions.values()].sort((a, b) => b.bought - a.bought)) {
+    const hist = historyOf(p.symbol, priceHistory)
+    if (hist) all.push({ ...p, hist })
+    else unpriced.push(p.name)
+  }
+  if (!all.length) return []
+
+  const funds = all.slice(0, PICKS).map((p, slot) => ({ ...p, slot }))
+  const charted = new Map(funds.map((f) => [f.key, f]))
+
+  // The replay can only start where every charted scrip already has a price;
+  // earlier buys are counted and named rather than silently valued at nothing.
+  const histStart = Math.max(...funds.map((f) => f.hist.t[0]))
+  const pricedKeys = new Set(all.map((p) => p.key))
+  const priced = txns.filter((t) => pricedKeys.has(symKeyOf(t)))
+  const included = priced.filter((t) => t.date.getTime() >= histStart)
+  if (!included.length) return []
+  const excluded = priced.length - included.length
+
+  const txnTimes = included.map((t) => t.date.getTime())
+  const samples = sampleTimes(txnTimes[0], txnTimes, nowT)
+
+  const held = new Map(all.map((p) => [p.key, { hist: p.hist, qty: 0 }]))
+  const altQty = funds.map(() => 0)
+  let netIn = 0
+  let grossIn = 0
+  let buyCount = 0
+  let sellCount = 0
+  let ti = 0
+
+  const invested = []
+  const actual = []
+  const alts = funds.map((f) => ({ name: f.name, symbol: f.symbol, sources: f.sources, slot: f.slot, values: [] }))
+
+  for (const s of samples) {
+    while (ti < included.length && txnTimes[ti] <= s) {
+      const t = included[ti++]
+      const amount = t.qty * t.price
+      const own = held.get(symKeyOf(t))
+      const sell = t.side === 'SELL'
+      if (sell) {
+        netIn -= amount
+        sellCount += 1
+        if (own) own.qty = Math.max(0, own.qty - t.qty)
+      } else {
+        netIn += amount
+        grossIn += amount
+        buyCount += 1
+        if (own) own.qty += t.qty
+      }
+      // The counterfactual moves the same rupees on the same day. It can't sell
+      // what it never accumulated, so a redemption larger than the simulated
+      // position just empties it.
+      funds.forEach((f, i) => {
+        const px = priceOn(f.hist, t.date)
+        if (!px) return
+        altQty[i] = sell ? Math.max(0, altQty[i] - amount / px) : altQty[i] + amount / px
+      })
+    }
+    const d = new Date(s)
+    invested.push(netIn)
+    actual.push([...held.values()].reduce((sum, a) => sum + a.qty * (priceOn(a.hist, d) || 0), 0))
+    funds.forEach((f, i) => alts[i].values.push(altQty[i] * (priceOn(f.hist, d) || 0)))
+  }
+
+  // Price trend: each scrip rebased to 100 at the first sample; dots on buys.
+  const trend = funds.map((f) => {
+    const base = priceOn(f.hist, new Date(samples[0]))
+    const values = samples.map((s) => {
+      const px = priceOn(f.hist, new Date(s))
+      return base && px ? (px / base) * 100 : null
+    })
+    const buys = included
+      .filter((t) => t.side !== 'SELL' && symKeyOf(t) === f.key)
+      .map((t) => {
+        const px = priceOn(f.hist, t.date)
+        return { t: t.date.getTime(), v: base && px ? (px / base) * 100 : null, amount: t.qty * t.price }
+      })
+      .filter((b) => b.v != null)
+    return { name: f.name, symbol: f.symbol, sources: f.sources, slot: f.slot, values, buys }
+  })
+
+  // Returns leaderboard: every scrip of this class the user has traded or still
+  // holds, on any broker, deduped by symbol — not just the four charted.
+  const rows = new Map()
+  const addRow = (key, name, sources, hist) => {
+    if (!hist) return
+    const row = rows.get(key)
+    if (row) {
+      for (const s of sources) if (!row.sources.includes(s)) row.sources.push(s)
+      return
+    }
+    const returns = {}
+    for (const w of RETURN_WINDOWS) returns[w.key] = periodReturnPx(hist, w.days, nowT, w.annualised)
+    const chart = charted.get(key)
+    rows.set(key, {
+      code: key,
+      name,
+      sources: [...sources],
+      charted: Boolean(chart),
+      slot: chart?.slot ?? null,
+      returns,
+    })
+  }
+  for (const p of all) addRow(p.key, p.name, p.sources, p.hist)
+  for (const h of holdings) {
+    if (h.type !== type) continue
+    addRow(symKeyOf(h), h.name, [h.source], historyOf(h.symbol, priceHistory))
+  }
+  const rank = (r) => r.returns['1y'] ?? r.returns['6m'] ?? -Infinity
+  const returnRows = [...rows.values()].sort((a, b) => rank(b) - rank(a))
+
+  return [
+    {
+      key: type,
+      label,
+      funds: funds.map((f) => ({ name: f.name, symbol: f.symbol, sources: f.sources, slot: f.slot })),
+      returnRows,
+      // Traded scrips that didn't make the chart — their buys still sit inside
+      // "Your buys" and the invested total.
+      unchartedActual: all.slice(PICKS).map((p) => p.name),
+      unpriced,
+      samples,
+      invested,
+      actual,
+      alts,
+      trend,
+      excluded,
+      txnCount: buyCount,
+      sellCount,
+      investedTotal: grossIn,
+    },
+  ]
 }

@@ -1,4 +1,9 @@
 // Generic per-asset tab (Stocks / ETFs / Mutual Funds), driven by `type`.
+//
+// All three tabs read the same way on purpose: name (with its broker), then
+// today's move, then total return, then the position itself (qty → cost →
+// price) and finally what it is worth now. Stocks/ETFs carry two extra columns
+// funds have no use for (avg price, market price); everything else is shared.
 import { useState } from 'react'
 import HoldingsTable from './HoldingsTable.jsx'
 import SourceLegend from './SourceLegend.jsx'
@@ -23,9 +28,13 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
   // table.
   const [expanded, setExpanded] = useState(false)
 
+  // "ETFs" is an initialism — lower-casing the tab label reads as "etfs".
+  const plural = type === 'etf' ? 'ETFs' : label.toLowerCase()
+  const singular = type === 'etf' ? 'ETF' : plural.replace(/s$/, '')
+
   const allRows = holdings.filter((h) => h.type === type)
   if (allRows.length === 0) {
-    return <EmptyState title={`No ${label.toLowerCase()} found`}>Refresh to pull the matching sheet.</EmptyState>
+    return <EmptyState title={`No ${plural} found`}>Refresh to pull the matching sheet.</EmptyState>
   }
   const rows = activeSource ? allRows.filter((h) => platformKeyOf(h.source) === activeSource) : allRows
 
@@ -52,22 +61,6 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
   const prevValForOneDay = sum(rowsWithOneDay, (h) => h.current - h.oneDayChange)
   const totalOneDayChangePct = prevValForOneDay > 0 ? (totalOneDayChange / prevValForOneDay) * 100 : null
 
-  const pnlCols = [
-    { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
-    {
-      key: 'pnl',
-      label: 'P&L',
-      align: 'right',
-      render: (r) => <span className={pnlClass(r.pnl)}>{formatINR(r.pnl)}</span>,
-    },
-    {
-      key: 'pnlPct',
-      label: 'P&L %',
-      align: 'right',
-      render: (r) => <span className={pnlClass(r.pnlPct)}>{formatPct(r.pnlPct)}</span>,
-    },
-  ]
-
   const renderName = (r) => {
     const platform = platformOf(r.source)
     const initial = platform ? platform.label[0].toUpperCase() : null
@@ -83,98 +76,115 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
     )
   }
 
-  const columns = isMF
-    ? [
-        { key: 'name', label: 'Fund', render: renderName },
-        {
-          key: 'oneDayChange',
-          label: '1D P&L',
-          align: 'right',
-          sortValue: (r) => r.oneDayChangePct,
-          render: (r) => {
-            if (r.oneDayChangePct == null) return '—'
-            return (
-              <span className={pnlClass(r.oneDayChangePct)}>
-                {r.oneDayChange != null ? (
-                  <>
-                    {formatINR(r.oneDayChange)} <small>({formatPct(r.oneDayChangePct)})</small>
-                  </>
-                ) : (
-                  formatPct(r.oneDayChangePct)
-                )}
-              </span>
-            )
-          },
-        },
-        {
-          key: 'pnlPct',
-          label: 'Total P&L %',
-          align: 'right',
-          render: (r) => <span className={pnlClass(r.pnlPct)}>{formatPct(r.pnlPct)}</span>,
-        },
-        {
-          key: 'pnl',
-          label: 'P&L',
-          align: 'right',
-          render: (r) => <span className={pnlClass(r.pnl)}>{formatINR(r.pnl)}</span>,
-        },
-        { key: 'qty', label: 'Units', align: 'right', render: (r) => formatNumber(r.qty) },
-        { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
-        { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
-      ]
-    : [
-        { key: 'name', label: 'Name', render: renderName },
-        { key: 'qty', label: 'Qty', align: 'right', render: (r) => formatNumber(r.qty) },
-        { key: 'avgPrice', label: 'Avg price', align: 'right', render: (r) => formatINR(r.avgPrice, { paise: true }) },
-        { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
-        {
-          key: 'marketPrice',
-          label: 'Market price',
-          align: 'right',
-          render: (r) => (r.marketPrice != null ? formatINR(r.marketPrice, { paise: true }) : '—'),
-        },
-        ...pnlCols,
-      ]
-
-  const totalPnlCells = (
-    <>
-      <td className="ta-r">{formatINR(current)}</td>
-      <td className={`ta-r ${pnlClass(pnl)}`}>{formatINR(pnl)}</td>
-      <td className={`ta-r ${pnlClass(pnlPct)}`}>{formatPct(pnlPct)}</td>
-    </>
-  )
-
-  const footer = (
-    <tr className="table__total">
-      <td>
-        {rows.length} {label.toLowerCase()}
-      </td>
-      {isMF ? (
-        <>
-          <td className={`ta-r ${pnlClass(totalOneDayChange)}`}>
-            {totalOneDayChange !== 0 ? (
+  // One column vocabulary for every asset class; the tab picks which of them
+  // apply. Order is fixed here so Stocks, ETFs and Mutual Funds always scan the
+  // same way.
+  const COLS = {
+    name: { key: 'name', label: isMF ? 'Fund' : 'Name', render: renderName },
+    oneDay: {
+      key: 'oneDayChange',
+      label: '1D P&L',
+      align: 'right',
+      sortValue: (r) => r.oneDayChangePct,
+      render: (r) => {
+        if (r.oneDayChangePct == null) return '—'
+        return (
+          <span className={pnlClass(r.oneDayChangePct)}>
+            {r.oneDayChange != null ? (
               <>
-                {formatINR(totalOneDayChange)} <small>({formatPct(totalOneDayChangePct)})</small>
+                {formatINR(r.oneDayChange)} <small>({formatPct(r.oneDayChangePct)})</small>
               </>
-            ) : '—'}
-          </td>
-          <td className={`ta-r ${pnlClass(pnlPct)}`}>{formatPct(pnlPct)}</td>
-          <td className={`ta-r ${pnlClass(pnl)}`}>{formatINR(pnl)}</td>
-          <td className="ta-r" />
-          <td className="ta-r">{formatINR(invested)}</td>
-          <td className="ta-r">{formatINR(current)}</td>
-        </>
-      ) : (
-        <>
-          <td className="ta-r" />
-          <td className="ta-r" />
-          <td className="ta-r">{formatINR(invested)}</td>
-          <td className="ta-r" />
-          {totalPnlCells}
-        </>
-      )}
-    </tr>
-  )
+            ) : (
+              formatPct(r.oneDayChangePct)
+            )}
+          </span>
+        )
+      },
+    },
+    pnlPct: {
+      key: 'pnlPct',
+      label: 'Total P&L %',
+      align: 'right',
+      render: (r) => <span className={pnlClass(r.pnlPct)}>{formatPct(r.pnlPct)}</span>,
+    },
+    pnl: {
+      key: 'pnl',
+      label: 'P&L',
+      align: 'right',
+      render: (r) => <span className={pnlClass(r.pnl)}>{formatINR(r.pnl)}</span>,
+    },
+    qty: {
+      key: 'qty',
+      label: isMF ? 'Units' : 'Qty',
+      align: 'right',
+      render: (r) => formatNumber(r.qty),
+    },
+    avgPrice: {
+      key: 'avgPrice',
+      label: 'Avg price',
+      align: 'right',
+      render: (r) => formatINR(r.avgPrice, { paise: true }),
+    },
+    marketPrice: {
+      key: 'marketPrice',
+      label: 'Market price',
+      align: 'right',
+      render: (r) => (r.marketPrice != null ? formatINR(r.marketPrice, { paise: true }) : '—'),
+    },
+    invested: { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
+    current: { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
+  }
+
+  const order = isMF
+    ? ['name', 'oneDay', 'pnlPct', 'pnl', 'qty', 'invested', 'current']
+    : ['name', 'oneDay', 'pnlPct', 'pnl', 'qty', 'avgPrice', 'marketPrice', 'invested', 'current']
+  const columns = order.map((k) => COLS[k])
+
+  // Totals mirror `order` cell for cell — per-share columns have no meaningful
+  // total, so they stay blank rather than summing into a nonsense number.
+  const TOTALS = {
+    name: (
+      <td key="name">
+        {rows.length} {rows.length === 1 ? singular : plural}
+      </td>
+    ),
+    oneDay: (
+      <td key="oneDay" className={`ta-r ${pnlClass(totalOneDayChange)}`}>
+        {totalOneDayChange !== 0 ? (
+          <>
+            {formatINR(totalOneDayChange)} <small>({formatPct(totalOneDayChangePct)})</small>
+          </>
+        ) : (
+          '—'
+        )}
+      </td>
+    ),
+    pnlPct: (
+      <td key="pnlPct" className={`ta-r ${pnlClass(pnlPct)}`}>
+        {formatPct(pnlPct)}
+      </td>
+    ),
+    pnl: (
+      <td key="pnl" className={`ta-r ${pnlClass(pnl)}`}>
+        {formatINR(pnl)}
+      </td>
+    ),
+    qty: <td key="qty" className="ta-r" />,
+    avgPrice: <td key="avgPrice" className="ta-r" />,
+    marketPrice: <td key="marketPrice" className="ta-r" />,
+    invested: (
+      <td key="invested" className="ta-r">
+        {formatINR(invested)}
+      </td>
+    ),
+    current: (
+      <td key="current" className="ta-r">
+        {formatINR(current)}
+      </td>
+    ),
+  }
+
+  const footer = <tr className="table__total">{order.map((k) => TOTALS[k])}</tr>
 
   return (
     <div className="tab">
@@ -221,7 +231,7 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
         <button type="button" className="see-more" onClick={() => setExpanded((v) => !v)}>
           {expanded
             ? `Show ${foldTo} recently bought`
-            : `See all ${rows.length} ${label.toLowerCase()}`}
+            : `See all ${rows.length} ${plural}`}
         </button>
       )}
     </div>
