@@ -121,8 +121,85 @@ current value, market price and P&L are recomputed **live** in the browser:
   `resources/mf-schemes.json`; re-run it when you add a new fund (the console
   warns about unmatched funds).
 - The **Refresh prices** action in the ⋮ menu force-refreshes both.
+- Every asset tab carries a **freshness stamp** at the left of the broker-chip
+  row, just above the table. On Mutual Funds it reads `● NAV 25 Aug` — the day
+  the NAV itself was struck, which is the day your Current value is worth. NAVs
+  publish once a day late in the evening, so on the 26th you are normally
+  looking at the 25th's NAV; the time we fetched it is deliberately not shown.
+  Stocks/ETFs have no such date (a quote moves all session), so theirs reads
+  `● Prices · 4 min ago`. The dot turns amber when a NAV is more than 4 days
+  old, or a quote older than its 10-minute cache. Tapping the stamp refreshes
+  prices and NAVs, same as the ⋮ menu item.
 - New stock/ETF holdings with descriptive names may need a line added to
   `resources/name-symbols.json` (broker name → NSE ticker).
+
+## Monthly correction strategy
+
+On mobile, the opening Consolidated page has a dedicated **Invest** tab in the
+bottom swipeable section dock. It shows a monthly NAV sparkline, drawdown metric,
+budget progress bar and trigger timeline. Tap the other tabs for Goal, Total,
+Funds and Stocks; scrolling the dock does not change the active view. Detailed
+alerts and history expand on demand, and the info icon holds the strategy rules.
+On desktop the strategy remains the first card. Select any mapped portfolio mutual fund (Direct/Regular plans remain
+separate) to see its own NAV, monthly high, drawdown, allocation progress and
+recommendations. Unmapped funds are listed as unavailable. Invesco India Mid Cap
+Direct Growth, AMFI **120403**, is always available as the default selection.
+
+Each fund starts with an independent **₹1,00,000** monthly budget: **55%** on the
+first published NAV date, **20% / 15% / 10%** at **3% / 5% / 7%** drawdowns, and
+the entire remainder on the **15th**, or the next published NAV date. These are
+per-fund budgets, not portions of a shared portfolio budget. Use **Configure** to
+change the budget, initial percentage, correction levels and cutoff day. Levels
+can be added/removed; allocations must total 100%. Cutoff days exceeding a
+month's length are clamped to its last day.
+
+Drawdown is `(highest NAV in this calendar month − current NAV) / highest NAV × 100`.
+The engine processes NAV dates chronologically, triggers all crossed pending
+levels together, and never recommends more than the monthly budget. Cutoff takes
+precedence over correction levels on the cutoff NAV date. A completed month's
+NAV metrics continue updating without issuing more allocation recommendations.
+Dates use the Indian calendar, independently of the browser's timezone.
+
+**Allocated means recommended, not invested.** Recommendations do not create
+transactions or change holdings. **Mark reviewed** acknowledges an alert without
+claiming a purchase or freeing its allocation. The card shows outstanding current
+month recommendations and preserves a dated recommendation log, including pending
+alerts from earlier months. On first use it catches up from the start of the
+current month; later checks catch up missed NAV dates/months since tracking began.
+Historical trigger dates are displayed, so a catch-up alert is distinguishable
+from a trigger on the latest NAV.
+
+Once a month has recommended money, configuration changes apply **next month**;
+its budget and rules are frozen to protect already-issued recommendations. If
+there are no recommendations yet, settings apply immediately. The editable form
+shows the saved settings; current-month metrics always use that month's snapshot.
+
+This repository is a static React app with no server database, cron scheduler or
+notification service. The feature reuses `fetchNavs` and its history/cache; checks
+also run every 30 minutes while visible, on focus/return and on reconnect. There
+are **no checks or push notifications while the app is closed**. `STRATEGY_POLL_MS`
+and default strategy values live in `src/lib/correctionStrategy.js`.
+
+Persistent schema: IndexedDB **`invest-monitor:strategies`**, version **1**, created
+automatically on first use:
+
+| Store | Key | Contents |
+|---|---|---|
+| `strategies` | AMFI `schemeCode` | Saved per-fund configuration, tracking start month |
+| `months` | `schemeCode:YYYY-MM` | Frozen config, integer-paise budget/allocated/remaining, current/monthly-high NAV, drawdown, trigger keys, NAV/cutoff dates and statuses |
+| `recommendations` | Monthly ID + trigger keys | Amount, component levels, trigger NAV/date, creation date, pending/reviewed status |
+
+An overlapping IndexedDB read/write transaction commits monthly state and alerts
+together, serializing concurrent jobs across tabs. A unique multi-entry
+`triggerKeys` index also rejects duplicate monthly triggers. Storage errors are
+shown rather than silently issuing unsaved recommendations. This guarantee and
+history are **local to this browser and site origin**; other devices have separate
+records, and clearing site data removes the history. No server migration is
+required. The pure strategy evaluator takes NAV history as data and can be reused
+for backtesting without the live API.
+
+Run `npm test` for trigger, cutoff, monthly rollover, configuration, persistence
+and concurrency coverage (using Node's test runner and `fake-indexeddb`).
 
 ## Platform colours
 

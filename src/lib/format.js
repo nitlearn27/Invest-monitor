@@ -63,3 +63,29 @@ export function formatDateTime(value) {
     minute: '2-digit',
   })
 }
+
+// Day + month only ("25 Aug") — for chips where the year is noise and the full
+// date is a tooltip away.
+export function formatDayMonth(value) {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+// How long ago a timestamp was: "just now" / "6 min ago" / "3 hr ago" /
+// "yesterday" / "4 days ago". Floors every step, so a value never reads as the
+// next unit up ("24 hr ago").
+export function formatAgo(value, now = Date.now()) {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  const secs = Math.max(0, Math.floor((now - d.getTime()) / 1000))
+  if (secs < 60) return 'just now'
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs} hr ago`
+  const days = Math.floor(hrs / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
+}

@@ -42,6 +42,7 @@ function DonutKpi({ stats }) {
 }
 
 export default function ConsolidatedTab({
+  strategy,
   holdings,
   transactions = [],
   mfTransactions = [],
@@ -60,6 +61,7 @@ export default function ConsolidatedTab({
   if (isMobile) {
     return (
       <ConsolidatedMobile
+        strategy={strategy}
         cards={cards}
         allocation={allocation}
         mfClass={mfClass}
@@ -77,6 +79,7 @@ export default function ConsolidatedTab({
 
   return (
     <div className="tab">
+      {strategy}
       <GoalTracker
         holdings={holdings}
         transactions={transactions}

@@ -9,16 +9,37 @@ import MfWhatIf from './MfWhatIf.jsx'
 import EquityWhatIf from './EquityWhatIf.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
 import ProjectionTab from './ProjectionTab.jsx'
+import CorrectionStrategyCard from './CorrectionStrategyCard.jsx'
+import { useCorrectionStrategies } from '../lib/useCorrectionStrategies.js'
+import { DEFAULT_CORRECTION_STRATEGY, STRATEGY_POLL_MS } from '../lib/correctionStrategy.js'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
 import { driveConfigured, pricesConfigured } from '../config.js'
 import { fetchDriveWorkbooks } from '../lib/drive.js'
 import { buildDataset } from '../lib/classify.js'
 import { loadCache, saveCache } from '../lib/cache.js'
-import { fetchQuotes, fetchPriceHistory, enrichHoldings } from '../lib/quotes.js'
-import { fetchNavs, enrichMfHoldings, enrichMfTransactions, schemeCodesFor, mfKey } from '../lib/navs.js'
+import {
+  fetchQuotes,
+  fetchPriceHistory,
+  enrichHoldings,
+  quotesSyncedAt,
+  PRICE_TTL_MS,
+} from '../lib/quotes.js'
+import {
+  fetchNavs,
+  enrichMfHoldings,
+  enrichMfTransactions,
+  schemeCodesFor,
+  navAsOf,
+  mfKey,
+} from '../lib/navs.js'
 import { MARKET_CODES } from '../lib/market.js'
 import { withDerivedHoldings } from '../lib/derive.js'
 import { withRecurringSips } from '../lib/monthly.js'
+
+// A NAV date older than this reads as stale on the MF tab's stamp. Measured on
+// the NAV DATE, not the fetch, so it has to clear a weekend plus a market
+// holiday before it cries wolf.
+const NAV_DATE_STALE_MS = 4 * 24 * 60 * 60 * 1000
 
 const TABS = [
   { key: 'consolidated', label: 'Consolidated' },
@@ -52,9 +73,12 @@ export default function Dashboard() {
   const [priceHistory, setPriceHistory] = useState(() => new Map())
   const [pricesAt, setPricesAt] = useState(null)
   const [pricesBusy, setPricesBusy] = useState(false)
-  // Live MF NAVs (Map<schemeCode, { history, latest }>) from mfapi.in; the sheet's
-  // stale MF "Current value" is the fallback for any fund not resolved here.
+  // Live MF NAVs (Map<schemeCode, { history, latest, ts }>) from mfapi.in; the
+  // sheet's stale MF "Current value" is the fallback for any fund not resolved
+  // here.
   const [navMap, setNavMap] = useState(() => new Map())
+  const [navsBusy, setNavsBusy] = useState(false)
+  const [strategyTick, setStrategyTick] = useState(0)
 
   const loadFromDrive = useCallback(async () => {
     setStatus('loading')
@@ -113,7 +137,9 @@ export default function Dashboard() {
         const map = await fetchQuotes(symbols, { force })
         if (map.size > 0) {
           setPriceMap(map)
-          setPricesAt(new Date())
+          // From the quotes' own timestamps, not `now`: a cache-served boot
+          // refreshed nothing, and stamping it "just now" would be a lie.
+          setPricesAt(quotesSyncedAt(map))
         }
         const history = await fetchPriceHistory(symbols, { force })
         if (history.size > 0) setPriceHistory(history)
@@ -129,11 +155,11 @@ export default function Dashboard() {
   // CORS-enabled. `force` bypasses the daily TTL (manual Refresh).
   const loadNavs = useCallback(
     async (force) => {
-      if (!dataset) return
       const codes = [
         ...new Set([
-          ...schemeCodesFor(dataset.holdings, false),
-          ...schemeCodesFor(dataset.mfTransactions, true),
+          DEFAULT_CORRECTION_STRATEGY.schemeCode,
+          ...schemeCodesFor(dataset?.holdings, false),
+          ...schemeCodesFor(dataset ? withRecurringSips(dataset.mfTransactions) : [], true),
           // Index funds standing in for the mid/small-cap market on the
           // Consolidated tab — pinned, so the series doesn't change shape when
           // the user buys or sells a fund.
@@ -141,8 +167,13 @@ export default function Dashboard() {
         ]),
       ]
       if (codes.length === 0) return
-      const map = await fetchNavs(codes, { force })
-      if (map.size > 0) setNavMap(map)
+      setNavsBusy(true)
+      try {
+        const map = await fetchNavs(codes, { force })
+        if (map.size > 0) setNavMap(map)
+      } finally {
+        setNavsBusy(false)
+      }
     },
     [dataset],
   )
@@ -152,13 +183,32 @@ export default function Dashboard() {
     let cancelled = false
     ;(async () => {
       if (cancelled) return
-      await loadPrices(false)
-      await loadNavs(false)
+      await Promise.all([loadPrices(false), loadNavs(false)])
     })()
     return () => {
       cancelled = true
     }
   }, [loadPrices, loadNavs])
+
+  // This static app has no background server. Check while visible and on return;
+  // the persisted engine catches up missed NAV dates after the app was closed.
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState !== 'visible') return
+      setStrategyTick((value) => value + 1)
+      void loadNavs(true)
+    }
+    const timer = window.setInterval(check, STRATEGY_POLL_MS)
+    window.addEventListener('focus', check)
+    window.addEventListener('online', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', check)
+      window.removeEventListener('online', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [loadNavs])
 
   // View pipeline: inject the recurring SIP legs, resolve their units from NAV
   // history, derive the INDmoney holdings from the transaction sheets (replacing
@@ -175,6 +225,43 @@ export default function Dashboard() {
     }
   }, [dataset, priceMap, navMap])
 
+  const strategies = useCorrectionStrategies(view?.holdings, navMap, strategyTick)
+
+  // Refresh always re-pulls from Drive (when configured).
+  const refresh = driveConfigured() ? loadFromDrive : null
+  // The manual action force-refreshes live stock prices and MF NAVs together.
+  const refreshPrices = useCallback(() => {
+    if (pricesConfigured()) loadPrices(true)
+    loadNavs(true)
+  }, [loadPrices, loadNavs])
+
+  // What dates the numbers on the asset tabs. Funds report the NAV's OWN date —
+  // the day its price was struck, which is what the Current column is worth;
+  // equities have no such date (a quote moves all session), so theirs reports
+  // the pull instead.
+  const mfFreshness = useMemo(
+    () => ({
+      noun: 'NAV',
+      asOf: navAsOf(navMap, schemeCodesFor(view?.holdings || [], false)),
+      syncedAt: null,
+      staleAfterMs: NAV_DATE_STALE_MS,
+      busy: navsBusy,
+      onRefresh: refreshPrices,
+    }),
+    [navMap, view, navsBusy, refreshPrices],
+  )
+  const equityFreshness = useMemo(
+    () => ({
+      noun: 'Prices',
+      asOf: null,
+      syncedAt: pricesAt,
+      staleAfterMs: PRICE_TTL_MS,
+      busy: pricesBusy,
+      onRefresh: refreshPrices,
+    }),
+    [pricesAt, pricesBusy, refreshPrices],
+  )
+
   // Latest buy per fund — ranks the MF tab's folded view (5 most recently
   // bought funds up front; funds with no transactions rank last).
   const mfLastBuy = useMemo(() => {
@@ -187,13 +274,6 @@ export default function Dashboard() {
     return m
   }, [view])
 
-  // Refresh always re-pulls from Drive (when configured).
-  const refresh = driveConfigured() ? loadFromDrive : null
-  // The manual action force-refreshes live stock prices and MF NAVs together.
-  const refreshPrices = () => {
-    if (pricesConfigured()) loadPrices(true)
-    loadNavs(true)
-  }
 
   return (
     <div className="app">
@@ -203,7 +283,7 @@ export default function Dashboard() {
         onRefresh={refresh}
         busy={status === 'loading'}
         onRefreshPrices={refreshPrices}
-        pricesBusy={pricesBusy}
+        pricesBusy={pricesBusy || navsBusy}
         pricesAt={pricesAt}
         tabs={
           status === 'ready' && view
@@ -216,6 +296,10 @@ export default function Dashboard() {
         tab={tab}
         onTabChange={setTab}
       />
+
+      {tab === 'consolidated' && (status !== 'ready' || !view) && <div className="container">
+        <CorrectionStrategyCard monitor={strategies} busy={navsBusy} onRefresh={() => loadNavs(true)} />
+      </div>}
 
       {status === 'loading' && <Loader label="Fetching your reports…" />}
 
@@ -240,6 +324,7 @@ export default function Dashboard() {
           <main className="container">
             {tab === 'consolidated' && (
               <ConsolidatedTab
+                strategy={<CorrectionStrategyCard monitor={strategies} busy={navsBusy} onRefresh={() => loadNavs(true)} />}
                 holdings={view.holdings}
                 transactions={view.transactions}
                 mfTransactions={view.mfTransactions}
@@ -260,7 +345,7 @@ export default function Dashboard() {
             )}
             {tab === 'stock' && (
               <>
-                <AssetTab type="stock" label="Stocks" holdings={view.holdings} />
+                <AssetTab type="stock" label="Stocks" holdings={view.holdings} freshness={equityFreshness} />
                 <EquityWhatIf
                   type="stock"
                   label="Stocks"
@@ -278,6 +363,7 @@ export default function Dashboard() {
                   holdings={view.holdings}
                   foldTo={5}
                   rankOf={(h) => mfLastBuy.get(mfKey(h.name)) ?? 0}
+                  freshness={mfFreshness}
                 />
                 <MfWhatIf
                   mfTransactions={view.mfTransactions}
@@ -288,7 +374,7 @@ export default function Dashboard() {
             )}
             {tab === 'etf' && (
               <>
-                <AssetTab type="etf" label="ETFs" holdings={view.holdings} />
+                <AssetTab type="etf" label="ETFs" holdings={view.holdings} freshness={equityFreshness} />
                 <EquityWhatIf
                   type="etf"
                   label="ETFs"

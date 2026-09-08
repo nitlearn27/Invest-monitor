@@ -1,9 +1,8 @@
 // Mobile Consolidated view: one section at a time, switched via a horizontal
-// scroll-snapping bar along the bottom (tap a chip or swipe to snap it to
-// center). Each section leads with a hero — a big current-value figure + a
+// scrollable bar along the bottom. Each section leads with a hero — a big current-value figure + a
 // signed P&L delta — and the whole view re-tints to that asset class's own
 // identity colour (`--sec`), so navigation embodies the data model.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PortfolioCard from './PortfolioCard.jsx'
 import GoalTracker from './GoalTracker.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
@@ -87,71 +86,34 @@ function TopHoldingsBars({ top, maxTop }) {
   )
 }
 
-// Bottom switcher: a horizontal, scroll-snapping row of section chips. Active
-// chip is driven by either a tap or by whichever chip is snapped nearest center.
+// Swipe to reveal sections; only a deliberate tap/keyboard action changes view.
 function SectionRail({ sections, active, onChange }) {
   const railRef = useRef(null)
   const itemRefs = useRef({})
-  const lockUntil = useRef(0) // ignore scroll-detection right after a tap-scroll
-  const didInit = useRef(false)
-
-  // Center the initially-active chip once (the rail starts scrolled to the start).
-  useEffect(() => {
-    if (didInit.current) return
-    didInit.current = true
-    itemRefs.current[active]?.scrollIntoView({ inline: 'center', block: 'nearest' })
-  }, [active])
-
-  const scrollToChip = useCallback((key) => {
-    const el = itemRefs.current[key]
-    if (el) {
-      lockUntil.current = Date.now() + 450 // let the smooth scroll settle
-      el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
-    }
-  }, [])
-
-  const handleTap = (key) => {
-    onChange(key)
-    scrollToChip(key)
-  }
-
-  // On scroll, pick the chip whose center is nearest the rail's horizontal center.
   useEffect(() => {
     const rail = railRef.current
-    if (!rail) return
-    let raf = 0
-    const onScroll = () => {
-      if (raf) return
-      raf = requestAnimationFrame(() => {
-        raf = 0
-        if (Date.now() < lockUntil.current) return
-        const railMid = rail.getBoundingClientRect().left + rail.clientWidth / 2
-        let best = null
-        let bestDist = Infinity
-        for (const s of sections) {
-          const el = itemRefs.current[s.key]
-          if (!el) continue
-          const r = el.getBoundingClientRect()
-          const dist = Math.abs(r.left + r.width / 2 - railMid)
-          if (dist < bestDist) {
-            bestDist = dist
-            best = s.key
-          }
-        }
-        if (best && best !== active) onChange(best)
-      })
-    }
-    rail.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      rail.removeEventListener('scroll', onScroll)
-      if (raf) cancelAnimationFrame(raf)
-    }
-  }, [sections, active, onChange])
+    const item = itemRefs.current[active]
+    if (!rail || !item) return
+    rail.scrollTo({
+      left: item.offsetLeft - (rail.clientWidth - item.offsetWidth) / 2,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    })
+  }, [active])
+
+  const onKeyDown = (event) => {
+    const index = sections.findIndex((section) => section.key === active)
+    const target = { ArrowRight: (index + 1) % sections.length, ArrowLeft: (index - 1 + sections.length) % sections.length, Home: 0, End: sections.length - 1 }[event.key]
+    if (target == null) return
+    event.preventDefault()
+    const key = sections[target].key
+    onChange(key)
+    itemRefs.current[key]?.focus({ preventScroll: true })
+  }
 
   return (
-    <div className="cmob__rail" ref={railRef}>
-      <div className="cmob__rail-pad" aria-hidden="true" />
-      <ul className="cmob__chips" role="tablist" aria-orientation="horizontal">
+    <nav className="cmob__dock" aria-label="Portfolio views">
+      <div className="cmob__rail" ref={railRef}>
+      <ul className="cmob__chips" role="tablist" aria-label="Portfolio views" aria-orientation="horizontal" onKeyDown={onKeyDown}>
         {sections.map((s) => (
           <li key={s.key}>
             <button
@@ -159,8 +121,11 @@ function SectionRail({ sections, active, onChange }) {
               className={`cmob__chip ${active === s.key ? 'active' : ''}`}
               style={{ '--chip-c': s.color }}
               role="tab"
+              id={`home-tab-${s.key}`}
+              aria-controls={`home-panel-${s.key}`}
               aria-selected={active === s.key}
-              onClick={() => handleTap(s.key)}
+              tabIndex={active === s.key ? 0 : -1}
+              onClick={() => onChange(s.key)}
             >
               <span className="cmob__chip-dot" />
               <span className="cmob__chip-label">{s.short}</span>
@@ -168,12 +133,13 @@ function SectionRail({ sections, active, onChange }) {
           </li>
         ))}
       </ul>
-      <div className="cmob__rail-pad" aria-hidden="true" />
-    </div>
+      </div>
+    </nav>
   )
 }
 
 export default function ConsolidatedMobile({
+  strategy,
   cards,
   allocation,
   mfClass,
@@ -186,10 +152,11 @@ export default function ConsolidatedMobile({
   priceHistory = null,
   onOpenMonth = null,
 }) {
-  const [active, setActive] = useState('goal')
+  const [active, setActive] = useState(strategy ? 'invest' : 'goal')
   const maxTop = Math.max(...top.map((h) => h.invested || 0), 1)
 
   const sections = [
+    ...(strategy ? [{ key: 'invest', short: 'Invest', color: '#2cc0d6', render: () => strategy }] : []),
     {
       key: 'goal',
       short: 'Goal',
@@ -222,7 +189,7 @@ export default function ConsolidatedMobile({
     },
     {
       key: 'mf',
-      short: 'MF',
+      short: 'Funds',
       color: ASSET_COLORS.mf,
       render: () => (
         <>
@@ -266,9 +233,12 @@ export default function ConsolidatedMobile({
 
   return (
     <div className="cmob" style={{ '--sec': current.color }}>
-      <div className="cmob__main" key={active}>
+      {strategy && <div className="cmob__main" id="home-panel-invest" role="tabpanel" aria-labelledby="home-tab-invest" hidden={active !== 'invest'}>
+        {strategy}
+      </div>}
+      {active !== 'invest' && <div className="cmob__main" key={active} id={`home-panel-${active}`} role="tabpanel" aria-labelledby={`home-tab-${active}`}>
         {current.render()}
-      </div>
+      </div>}
       <SectionRail sections={sections} active={active} onChange={setActive} />
     </div>
   )

@@ -979,8 +979,52 @@
 
 .src-legend-row {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px 12px;
   margin: -2px 0 10px;
+}
+
+/* Freshness stamp: how old the prices/NAVs on this tab are. `margin-right:auto`
+   parks it at the far left of the legend row without disturbing the chips'
+   right alignment (and lets it drop to its own line when they wrap). */
+.freshness {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-mute);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.freshness:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-dim);
+}
+.freshness:disabled {
+  cursor: default;
+}
+.freshness__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pos);
+  flex: none;
+}
+.freshness__dot--stale {
+  background: var(--warn);
+}
+.freshness__key {
+  color: var(--text-dim);
+  font-weight: 620;
+  letter-spacing: 0.2px;
 }
 .src-legend {
   display: flex;
@@ -1296,134 +1340,26 @@
   }
 }
 
-/* ---------- Consolidated mobile (right-rail section switcher) ----------
-   Only mounted at ≤640px (JS breakpoint). One section in the main panel; a
-   vertical rail of chips on the right (tap or scroll-snap to switch). The page
-   itself doesn't scroll — only the main panel and the rail do. */
-.cmob {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* fill the viewport below the app bar, leaving the app's bottom padding */
-  height: calc(100dvh - 120px);
-  min-height: 0;
-}
-.cmob__main {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 2px 2px 4px;
-  animation: cmob-in 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-/* Keep each block at its natural height so the panel scrolls instead of
-   shrinking children — without this, a tall section squashes the .shero header
-   (overflow:hidden) and clips the invested value + Current row. */
-.cmob__main > * {
-  flex-shrink: 0;
-}
-@keyframes cmob-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.cmob__main::-webkit-scrollbar {
-  width: 6px;
-}
-.cmob__main::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 99px;
-}
-/* bottom switcher: a horizontal, scroll-snapping row of section chips */
-.cmob__rail {
-  flex: 0 0 auto;
-  padding: 7px 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-}
-.cmob__rail::-webkit-scrollbar {
-  display: none;
-}
-/* spacers let the first/last chip scroll-snap to the rail's horizontal center */
-.cmob__rail-pad {
-  flex: 0 0 calc(50% - 42px);
-}
-.cmob__chips {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  align-items: center;
-}
-.cmob__chip {
-  scroll-snap-align: center;
-  min-width: 64px;
-  min-height: 50px;
-  padding: 8px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-mute);
-  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
-}
-/* inactive: a quiet colour dot; active: a glowing bar indicator */
-.cmob__chip-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--chip-c, var(--accent));
-  opacity: 0.55;
-  transition: 0.18s ease;
-}
-.cmob__chip-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-.cmob__chip.active {
-  color: #fff;
-  background: linear-gradient(
-    155deg,
-    color-mix(in srgb, var(--chip-c, var(--accent)) 38%, var(--surface)),
-    color-mix(in srgb, var(--chip-c, var(--accent)) 9%, var(--surface))
-  );
-  border-color: color-mix(in srgb, var(--chip-c, var(--accent)) 50%, transparent);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--chip-c, var(--accent)) 26%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.13);
-  transform: scale(1.06);
-}
-.cmob__chip.active .cmob__chip-dot {
-  opacity: 1;
-  width: 18px;
-  height: 4px;
-  box-shadow: 0 0 10px color-mix(in srgb, var(--chip-c, var(--accent)) 85%, transparent);
-}
-.cmob__chip:focus-visible {
-  outline: 2px solid var(--chip-c, var(--accent));
-  outline-offset: 2px;
-}
+/* ---------- Mobile home: scrollable panel and thumb-friendly section dock ---------- */
+.app:has(.cmob) { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
+.cmob { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 94px - env(safe-area-inset-bottom, 0px)); min-height: 0; }
+.cmob__main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; display: flex; flex-direction: column; gap: 16px; padding: 2px 2px 4px; animation: cmob-in .2s ease both; }
+.cmob__main[hidden] { display: none; }
+.cmob__main > * { flex-shrink: 0; }
+@keyframes cmob-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.cmob__main::-webkit-scrollbar { width: 3px; }
+.cmob__main::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+.cmob__dock { flex: 0 0 auto; padding: 5px; border: 1px solid #ffffff20; border-radius: 22px; background: linear-gradient(145deg, #23456ddd, #0a1d38ee); backdrop-filter: blur(20px); box-shadow: 0 8px 24px #0003, inset 0 1px 0 #ffffff0d; }
+.cmob__rail { position: relative; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; scroll-padding-inline: 5px; overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 17px; }
+.cmob__rail::-webkit-scrollbar { display: none; }
+.cmob__chips { list-style: none; margin: 0; padding: 2px; display: flex; gap: 3px; width: max-content; min-width: 100%; }
+.cmob__chips li { flex: 1; }
+.cmob__chip { scroll-snap-align: start; min-width: 72px; min-height: 48px; padding: 9px 14px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 15px; border: 1px solid transparent; background: transparent; color: var(--text-mute); transition: background .2s ease, color .2s ease; }
+.cmob__chip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--chip-c, var(--accent)); opacity: .6; flex-shrink: 0; }
+.cmob__chip-label { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cmob__chip.active { color: var(--text); background: color-mix(in srgb, var(--chip-c, var(--accent)) 15%, #17314f); border-color: color-mix(in srgb, var(--chip-c, var(--accent)) 25%, transparent); box-shadow: inset 0 1px 0 #ffffff12; }
+.cmob__chip.active .cmob__chip-dot { opacity: 1; box-shadow: 0 0 8px color-mix(in srgb, var(--chip-c, var(--accent)) 50%, transparent); }
+.cmob__chip:focus-visible { outline: 2px solid var(--chip-c, var(--accent)); outline-offset: -3px; }
 
 /* ---- Section hero: big current-value figure + signed P&L delta ---- */
 .shero {

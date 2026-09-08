@@ -243,7 +243,22 @@ recomputed live. **Never fabricate values.**
   `order`, so a column added to one tab can't silently misalign the totals row.
   Optional `foldTo`/`rankOf` props — the MF tab passes `foldTo={5}` + a last-buy-recency rank from Dashboard's `mfLastBuy`
   map, so 5 recently-bought funds show up front and "See all" expands to a
-  scrollable table with sticky header), ConsolidatedTab, GoalTracker (goal card
+  scrollable table with sticky header). Optional `freshness` prop draws a
+  **FreshnessStamp** at the left of the legend row (`margin-right:auto`, so the
+  broker chips keep their right alignment and no vertical space is spent). It
+  shows a DATED source by the day its price was struck and an UNDATED one by
+  when it was pulled — never both. MFs are dated: `navAsOf` (navs.js) reads the
+  newest NAV date out of the held funds' histories, because AMFI publishes once
+  a day late in the evening and the fetch clock would date the number a day
+  forward. Equities are undated (a quote moves all session), so they carry
+  `quotesSyncedAt` (quotes.js) — the OLDEST `ts` in the map, since a part-cached
+  refresh is only as current as its stalest quote, and each entry now carries
+  the `ts` it was fetched at with **cache hits keeping their original ts** (the
+  old `setPricesAt(new Date())` claimed a cache-served boot had just refreshed).
+  `staleAfterMs` turns the dot amber and is measured against whichever clock the
+  stamp uses — 4 days for a NAV date (must clear a weekend plus a holiday before
+  crying wolf), the 10-min TTL for quotes. The stamp is a button wired to the
+  same `refreshPrices`), ConsolidatedTab, GoalTracker (goal card
   + journey/pace SVG charts + pulse tiles with their own micro-charts; card
   chrome is dropped at ≤640px so the charts span the device), ReturnSheet
   (this-month return breakdown; portalled to `<body>` — the `.card`

@@ -17,7 +17,8 @@ import { PRICE } from '../config.js'
 const SPARK = 'https://query1.finance.yahoo.com/v8/finance/spark'
 const SUFFIX = '.NS' // NSE
 const CHUNK = 40 // symbols per request (keeps the proxied URL a sane length)
-const TTL_MS = 10 * 60 * 1000 // reuse a price for 10 min before refetching
+export const PRICE_TTL_MS = 10 * 60 * 1000 // reuse a price for 10 min before refetching
+const TTL_MS = PRICE_TTL_MS
 const CACHE_KEY = 'invest-monitor:prices:v2'
 
 // INDmoney symbol -> full Yahoo symbol, for names that don't map to "<SYM>.NS"
@@ -92,8 +93,9 @@ async function fetchChunk(ySymbols) {
 }
 
 // Fetch live prices for the given symbols. Returns a
-// Map<symbol, { price, prev }> (INR; `prev` = previous session's close, null when
-// unknown). Symbols with a fresh cache entry skip the network. `force` bypasses
+// Map<symbol, { price, prev, ts }> (INR; `prev` = previous session's close, null
+// when unknown; `ts` = when that quote was pulled — a cache hit keeps its
+// original time, so a page reload can't pass stale prices off as just-fetched). Symbols with a fresh cache entry skip the network. `force` bypasses
 // the TTL (manual Refresh button). Never throws — partial results on error.
 export async function fetchQuotes(symbols, { force = false } = {}) {
   const result = new Map()
@@ -107,7 +109,7 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
   for (const sym of wanted) {
     const hit = cache[sym]
     if (!force && hit && now - hit.ts < TTL_MS && hit.price != null) {
-      result.set(sym, { price: hit.price, prev: hit.prev ?? null })
+      result.set(sym, { price: hit.price, prev: hit.prev ?? null, ts: hit.ts })
     } else {
       stale.push(sym)
     }
@@ -124,7 +126,7 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
     group.forEach((sym, i) => {
       const q = quotes[ySymbols[i]]
       if (q?.price != null) {
-        result.set(sym, q)
+        result.set(sym, { ...q, ts: now })
         cache[sym] = { price: q.price, prev: q.prev, ts: now }
       }
     })
@@ -132,6 +134,16 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
 
   writeCache(cache)
   return result
+}
+
+// When the prices in a quote map were last pulled — the OLDEST entry, since a
+// part-cached refresh is only as current as its stalest quote. null if empty.
+export function quotesSyncedAt(priceMap) {
+  let oldest = null
+  for (const q of priceMap?.values?.() || []) {
+    if (q?.ts != null && (oldest == null || q.ts < oldest)) oldest = q.ts
+  }
+  return oldest == null ? null : new Date(oldest)
 }
 
 // --- daily close history (goal tracker) --------------------------------------

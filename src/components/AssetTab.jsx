@@ -4,13 +4,21 @@
 // today's move, then total return, then the position itself (qty → cost →
 // price) and finally what it is worth now. Stocks/ETFs carry two extra columns
 // funds have no use for (avg price, market price); everything else is shared.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import HoldingsTable from './HoldingsTable.jsx'
 import SourceLegend from './SourceLegend.jsx'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import { EmptyState } from './StateViews.jsx'
 import { platformKeyOf, platformOf } from '../config.js'
-import { formatINR, formatNumber, formatPct } from '../lib/format.js'
+import {
+  formatAgo,
+  formatDate,
+  formatDateTime,
+  formatDayMonth,
+  formatINR,
+  formatNumber,
+  formatPct,
+} from '../lib/format.js'
 
 const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0)
 
@@ -19,7 +27,66 @@ function pnlClass(v) {
   return v >= 0 ? 'pos' : 'neg'
 }
 
-export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
+// "What day are these numbers for?" — the one thing a Refresh button can't say.
+// Sits on the legend row, left of the broker chips, so it costs no vertical
+// space and reads right above the figures it dates. Tapping re-pulls.
+//
+// A DATED source (MF NAV) shows only the day its price was struck — AMFI
+// publishes one NAV per fund per day, late in the evening, so a fund fetched at
+// noon is carrying the PREVIOUS day's NAV. When we asked for it is noise; the
+// day it is for is the whole answer. An UNDATED source (live equity quotes,
+// which move all session) has no such day, so it can only report the pull.
+function FreshnessStamp({ noun, asOf, syncedAt, staleAfterMs, busy, onRefresh }) {
+  // Slow tick so "4 min ago" keeps counting instead of freezing at mount.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!asOf && !syncedAt) return null
+
+  // Both ages are measured against `staleAfterMs`, but against different
+  // clocks: a dated source ages by the day it is FOR, an undated one by when it
+  // was pulled.
+  const stamped = asOf ? asOf.getTime() : syncedAt?.getTime()
+  const stale = stamped == null || now - stamped > staleAfterMs
+  const title = [
+    asOf
+      ? `${noun} published for ${formatDate(asOf)}`
+      : syncedAt
+        ? `${noun} pulled ${formatDateTime(syncedAt)}`
+        : `${noun} not fetched yet`,
+    onRefresh ? 'tap to refresh' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <button
+      type="button"
+      className="freshness"
+      onClick={onRefresh || undefined}
+      disabled={busy || !onRefresh}
+      title={title}
+      aria-label={title}
+    >
+      <span className={`freshness__dot${stale ? ' freshness__dot--stale' : ''}`} />
+      <span className="freshness__key">{asOf ? `${noun} ${formatDayMonth(asOf)}` : noun}</span>
+      {busy ? (
+        <span className="freshness__age">· updating…</span>
+      ) : (
+        !asOf && (
+          <span className="freshness__age">
+            · {syncedAt ? formatAgo(syncedAt, now) : 'not checked'}
+          </span>
+        )
+      )}
+    </button>
+  )
+}
+
+export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshness }) {
   // Optional filter to a single broker platform (tap a legend chip). Resets per
   // tab since each tab mounts its own AssetTab.
   const [activeSource, setActiveSource] = useState(null)
@@ -210,6 +277,7 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf }) {
       </div>
 
       <div className="src-legend-row">
+        {freshness && <FreshnessStamp {...freshness} />}
         <SourceLegend
           sources={allRows.map((r) => r.source)}
           active={activeSource}

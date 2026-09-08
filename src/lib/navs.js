@@ -132,6 +132,22 @@ export async function fetchNavs(schemeCodes, { force = false } = {}) {
   return result
 }
 
+// The DATE these NAVs are for — i.e. the day AMFI struck them, which is what a
+// fund's Current value is worth. Not the fetch time: NAVs publish once a day
+// late in the evening, so pulling at any hour hands back the previous day's
+// number, and reporting the pull would date it a day forward.
+//
+// Latest across the set: AMFI stamps every scheme with the same day, so a
+// straggler AMC is a per-row nuance, not the tab's date. null if nothing priced.
+export function navAsOf(navMap, codes) {
+  let newest = null
+  for (const code of new Set(codes || [])) {
+    const t = navMap?.get?.(code)?.history?.[0]?.t
+    if (t != null && (newest == null || t > newest)) newest = t
+  }
+  return newest == null ? null : new Date(newest)
+}
+
 // NAV on (or just before) a date, from newest-first history. No date -> latest
 // (so the snapshot-scaling fallback becomes a no-op when asOf is unknown).
 //
