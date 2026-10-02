@@ -18,6 +18,7 @@ import {
   formatINR,
   formatNumber,
   formatPct,
+  formatUSD,
 } from '../lib/format.js'
 
 const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0)
@@ -97,7 +98,7 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
 
   // "ETFs" is an initialism — lower-casing the tab label reads as "etfs".
   const plural = type === 'etf' ? 'ETFs' : label.toLowerCase()
-  const singular = type === 'etf' ? 'ETF' : plural.replace(/s$/, '')
+  const singular = type === 'etf' ? 'ETF' : type === 'us_stock' ? 'US stock' : plural.replace(/s$/, '')
 
   const allRows = holdings.filter((h) => h.type === type)
   if (allRows.length === 0) {
@@ -118,9 +119,14 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
 
   const isMF = type === 'mf'
   const invested = sum(rows, (h) => h.invested)
-  const current = sum(rows, (h) => h.current)
-  const pnl = current - invested
-  const pnlPct = invested ? (pnl / invested) * 100 : null
+  const investedUsd = type === 'us_stock' ? sum(rows, (h) => h.investedUsd) : null
+  const anyCurrent = rows.some((h) => h.current != null)
+  const current = anyCurrent ? sum(rows, (h) => h.current ?? h.invested) : null
+  const currentUsd = type === 'us_stock' && anyCurrent
+    ? sum(rows, (h) => h.qty * (h.marketPriceUsd ?? h.avgPriceUsd))
+    : null
+  const pnl = current != null ? current - invested : null
+  const pnlPct = pnl != null && invested ? (pnl / invested) * 100 : null
 
   // 1D P&L calculations
   const totalOneDayChange = sum(rows, (h) => h.oneDayChange)
@@ -190,13 +196,13 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
       key: 'avgPrice',
       label: 'Avg price',
       align: 'right',
-      render: (r) => formatINR(r.avgPrice, { paise: true }),
+      render: (r) => type === 'us_stock' ? formatUSD(r.avgPriceUsd) : formatINR(r.avgPrice, { paise: true }),
     },
     marketPrice: {
       key: 'marketPrice',
       label: 'Market price',
       align: 'right',
-      render: (r) => (r.marketPrice != null ? formatINR(r.marketPrice, { paise: true }) : '—'),
+      render: (r) => type === 'us_stock' ? formatUSD(r.marketPriceUsd) : (r.marketPrice != null ? formatINR(r.marketPrice, { paise: true }) : '—'),
     },
     invested: { key: 'invested', label: 'Invested', align: 'right', render: (r) => formatINR(r.invested) },
     current: { key: 'current', label: 'Current', align: 'right', render: (r) => formatINR(r.current) },
@@ -258,11 +264,17 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
       <div className="strip">
         <div className="strip__item">
           <span className="strip__label">Invested</span>
-          <span className="strip__value">{formatINR(invested)}</span>
+          <span className="strip__value">
+            {formatINR(invested)}
+            {type === 'us_stock' && <small className="strip__usd">{formatUSD(investedUsd)}</small>}
+          </span>
         </div>
         <div className="strip__item">
           <span className="strip__label">Current</span>
-          <span className="strip__value">{formatINR(current)}</span>
+          <span className="strip__value">
+            {formatINR(current)}
+            {type === 'us_stock' && currentUsd != null && <small className="strip__usd">{formatUSD(currentUsd)}</small>}
+          </span>
         </div>
         <div className="strip__item">
           <span className="strip__label">Unrealized P&L</span>
@@ -293,6 +305,7 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
         rowClassName={sourceRowClassName}
         rowStyle={sourceRowStyle}
         className={foldable && expanded ? 'table-wrap--scroll' : undefined}
+        mobileCards={type === 'us_stock'}
       />
 
       {foldable && (
@@ -301,6 +314,9 @@ export default function AssetTab({ type, label, holdings, foldTo, rankOf, freshn
             ? `Show ${foldTo} recently bought`
             : `See all ${rows.length} ${plural}`}
         </button>
+      )}
+      {type === 'us_stock' && (
+        <small className="muted"><a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Rates by ExchangeRate-API</a></small>
       )}
     </div>
   )

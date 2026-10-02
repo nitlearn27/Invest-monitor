@@ -27,7 +27,7 @@ const CACHE_KEY = 'invest-monitor:prices:v2'
 const SYMBOL_OVERRIDES = {}
 
 const normalize = (s) => String(s || '').trim().toUpperCase()
-const yahooSymbol = (sym) => SYMBOL_OVERRIDES[sym] || `${sym}${SUFFIX}`
+const yahooSymbol = (sym) => SYMBOL_OVERRIDES[sym] || (sym === 'USDINR=X' ? sym : sym.startsWith('US:') ? sym.slice(3).replaceAll('.', '-') : `${sym}${SUFFIX}`)
 const proxied = (url) => `${PRICE.proxy}${encodeURIComponent(url)}`
 
 // --- localStorage price cache: { [symbol]: { price, prev, ts } } -------------
@@ -121,13 +121,22 @@ export async function fetchQuotes(symbols, { force = false } = {}) {
     try {
       quotes = await fetchChunk(ySymbols)
     } catch {
-      continue // leave these unresolved; caller falls back to the sheet value
+      // Keep the last observed FX/price on a temporary outage, retaining its
+      // original timestamp so the freshness indicator still reports its age.
+      for (const sym of group) {
+        const hit = cache[sym]
+        if (hit?.price > 0) result.set(sym, { price: hit.price, prev: hit.prev ?? null, ts: hit.ts })
+      }
+      continue
     }
     group.forEach((sym, i) => {
       const q = quotes[ySymbols[i]]
       if (q?.price != null) {
         result.set(sym, { ...q, ts: now })
         cache[sym] = { price: q.price, prev: q.prev, ts: now }
+      } else if (cache[sym]?.price > 0) {
+        const hit = cache[sym]
+        result.set(sym, { price: hit.price, prev: hit.prev ?? null, ts: hit.ts })
       }
     })
   }
@@ -274,21 +283,30 @@ export function priceOn(series, date) {
 // and a qty get a live marketPrice + recomputed current/pnl/pnlPct + today's
 // move; everything else (no price, no qty, or MFs) keeps the sheet's current
 // with marketPrice null. Never mutates qty / avgPrice / invested.
-export function enrichHoldings(holdings, priceMap) {
+export function enrichHoldings(holdings, priceMap, usdInr = null) {
   if (!holdings) return holdings
   return holdings.map((h) => {
     const quote = priceMap?.get?.(normalize(h.symbol))
     const price = quote?.price
-    if ((h.type !== 'stock' && h.type !== 'etf') || price == null || h.qty == null) {
+    const isUs = h.type === 'us_stock'
+    if ((h.type !== 'stock' && h.type !== 'etf' && !isUs) || price == null || h.qty == null || (isUs && !(usdInr > 0))) {
       // A derived holding with no ticker can never be priced — it silently sits
       // at cost forever. Say so, the same way navs.js does for unmatched funds:
       // the fix is one line in resources/name-symbols.json.
       if ((h.type === 'stock' || h.type === 'etf') && !h.symbol) {
         console.warn(`[quotes] no NSE symbol for "${h.name}" (${h.source}) — add it to resources/name-symbols.json; carried at cost`)
       }
-      return { ...h, marketPrice: h.marketPrice ?? null }
+      if (isUs && !h.symbol) {
+        console.warn(`[quotes] no US ticker for "${h.name}" (${h.source}) — add a Ticker column to Global Stocks; carried at cost`)
+      }
+      return { ...h, marketPrice: h.marketPrice ?? null, ...(isUs ? {
+        avgPriceUsd: h.avgPriceUsd ?? (usdInr > 0 && h.avgPrice != null ? h.avgPrice / usdInr : null),
+        current: null, pnl: null, pnlPct: null,
+      } : null) }
     }
-    const current = h.qty * price
+    const rate = isUs ? usdInr : 1
+    const marketPrice = price * rate
+    const current = h.qty * marketPrice
     const pnl = h.invested != null ? current - h.invested : null
     // Today's move against the previous session's close — the stock/ETF twin of
     // the NAV-vs-previous-NAV figure enrichMfHoldings computes for funds, so
@@ -296,11 +314,12 @@ export function enrichHoldings(holdings, priceMap) {
     const prev = quote.prev
     return {
       ...h,
-      marketPrice: price,
+      marketPrice,
+      ...(isUs ? { marketPriceUsd: price, avgPriceUsd: h.avgPriceUsd ?? (h.avgPrice != null ? h.avgPrice / rate : null) } : null),
       current,
       pnl,
       pnlPct: pnl != null && h.invested ? (pnl / h.invested) * 100 : null,
-      oneDayChange: prev ? (price - prev) * h.qty : null,
+      oneDayChange: prev ? (price - prev) * h.qty * rate : null,
       oneDayChangePct: prev ? ((price - prev) / prev) * 100 : null,
     }
   })

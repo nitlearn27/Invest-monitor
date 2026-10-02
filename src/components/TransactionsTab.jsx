@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import HoldingsTable from './HoldingsTable.jsx'
 import ReconcilePanel from './ReconcilePanel.jsx'
 import { EmptyState } from './StateViews.jsx'
-import { formatINR, formatNumber, formatDate } from '../lib/format.js'
+import { formatINR, formatUSD, formatNumber, formatDate } from '../lib/format.js'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import SourceLegend from './SourceLegend.jsx'
 import { platformKeyOf } from '../config.js'
@@ -12,6 +12,7 @@ const ASSETS = [
   { key: 'ALL', label: 'All' },
   { key: 'stock', label: 'Stocks' },
   { key: 'etf', label: 'ETFs' },
+  { key: 'us_stock', label: 'US Stocks' },
   { key: 'mf', label: 'MF' },
 ]
 
@@ -87,11 +88,11 @@ export default function TransactionsTab({ holdings, transactions, mfTransactions
       key: 'value',
       label: 'Value',
       align: 'right',
-      render: (r) => formatINR(r.value != null ? r.value : (r.qty || 0) * (r.price || 0)),
+      render: (r) => r.type === 'us_stock' && r.price == null ? '—' : formatINR(r.value != null ? r.value : (r.qty || 0) * (r.price || 0)),
       sortValue: (r) => (r.value != null ? r.value : (r.qty || 0) * (r.price || 0)),
     },
     { key: 'qty', label: 'Qty', align: 'right', render: (r) => formatNumber(r.qty) },
-    { key: 'price', label: 'Price', align: 'right', render: (r) => formatINR(r.price, { paise: true }) },
+    { key: 'price', label: 'Price', align: 'right', render: (r) => r.type === 'us_stock' ? formatUSD(r.priceUsd) : formatINR(r.price, { paise: true }) },
     {
       key: 'side',
       label: 'Type',

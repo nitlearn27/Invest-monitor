@@ -34,6 +34,7 @@ export function cardSummaries(holdings) {
     total: statsFor(holdings),
     mf: statsFor(byType(holdings, 'mf')),
     stocksEtfs: statsFor(holdings.filter((h) => h.type === 'stock' || h.type === 'etf')),
+    usStocks: statsFor(byType(holdings, 'us_stock')),
   }
 }
 

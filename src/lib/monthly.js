@@ -53,7 +53,7 @@ export function withRecurringSips(mfTxns = [], now = new Date()) {
 // Equity transactions carry a `type` (from the holdings/orders classifier);
 // fall back to the ISIN prefix for older data (INE… = stock, INF… = ETF).
 function txnType(t) {
-  if (t.type === 'stock' || t.type === 'etf') return t.type
+  if (t.type === 'stock' || t.type === 'etf' || t.type === 'us_stock') return t.type
   return (t.isin || '').toUpperCase().startsWith('INF') ? 'etf' : 'stock'
 }
 
@@ -81,6 +81,7 @@ export function monthlyInvestments(equityTxns = [], mfTxns = []) {
         mf: 0,
         stock: 0,
         etf: 0,
+        us_stock: 0,
         total: 0,
         count: 0,
       })

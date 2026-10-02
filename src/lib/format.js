@@ -1,4 +1,6 @@
 // Formatting helpers (INR, numbers, percentages, dates).
+const usdFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+export const formatUSD = (value) => value == null ? '—' : usdFormatter.format(value)
 
 const inr = new Intl.NumberFormat('en-IN', {
   style: 'currency',

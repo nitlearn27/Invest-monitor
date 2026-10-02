@@ -31,6 +31,7 @@ resources/*
 # …and the name→NSE-symbol maps, imported by classify.js at build time and baked
 # into the bundle. NSE tickers are public data.
 !resources/name-symbols.json
+!resources/us-name-symbols.json
 
 # Editor directories and files
 .vscode/*

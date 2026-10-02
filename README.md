@@ -4,7 +4,7 @@ A sleek dashboard to track your **INDmoney** portfolio — stocks, mutual funds 
 ETFs — and to verify that the transactions you make actually reflect in your
 holdings.
 
-- **Consolidated view** with totals, allocation chart and top holdings
+- **Consolidated view** with totals, allocation chart, top holdings, and all 30-day Losers/Gainers among priced holdings, with independent All, MF, Stocks and ETFs filters and price-path charts
 - **Road to ₹5 Cr** goal tracker at the top of the Consolidated page: your
   **total corpus** (what everything is worth today, profits included) valued day
   by day against the goal, with the invested line beneath it, continued as a
@@ -114,6 +114,14 @@ current value, market price and P&L are recomputed **live** in the browser:
   proxy; setting it empty disables live prices (the sheet's stale value is
   shown instead). Quotes are cached in localStorage for ~10 minutes, and carry
   the previous session's close so every tab can show a **1-day** gain/loss.
+- **US Stocks** — a `Global Stocks` sheet in the same Drive folder supplies USD
+  transactions (date, stock name or ticker, quantity, trade price, and optional
+  buy/sell type). US share quotes come from Yahoo Finance through the existing
+  proxy. The latest USD/INR rate comes from ExchangeRate-API's daily open endpoint
+  (with Yahoo as a fallback). Share prices stay in USD in the US Stocks tab;
+  invested cost, current value, and all portfolio totals are shown in INR using
+  the latest fetched USD/INR rate. If FX is unavailable, the app flags that US
+  rupee values are pending instead of treating dollars as rupees.
 - **Mutual funds** — NAVs come from [mfapi.in](https://www.mfapi.in/), a free
   no-key mirror of AMFI's daily NAV that allows CORS, so no proxy is needed.
   NAVs are cached for ~12 hours. Each fund is matched to its AMFI scheme code

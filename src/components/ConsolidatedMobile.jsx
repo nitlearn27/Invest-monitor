@@ -7,6 +7,7 @@ import PortfolioCard from './PortfolioCard.jsx'
 import GoalTracker from './GoalTracker.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
 import SourceLegend from './SourceLegend.jsx'
+import ThirtyDayMovers from './ThirtyDayMovers.jsx'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import { ASSET_TYPES, ASSET_COLORS, platformOf } from '../config.js'
 import { formatINR, formatINRCompact, formatPct } from '../lib/format.js'
@@ -154,6 +155,15 @@ export default function ConsolidatedMobile({
 }) {
   const [active, setActive] = useState(strategy ? 'invest' : 'goal')
   const maxTop = Math.max(...top.map((h) => h.invested || 0), 1)
+  const usHoldings = holdings.filter((h) => h.type === 'us_stock')
+  const usTotal = cards.usStocks.invested || 1
+  const usAlloc = usHoldings.map((h, i) => ({
+    key: h.symbol || h.name,
+    label: h.name,
+    value: h.invested || 0,
+    pct: ((h.invested || 0) / usTotal) * 100,
+    color: ['#ffb454', '#ff7b86', '#e7916b', '#f5a524'][i % 4],
+  }))
 
   const sections = [
     ...(strategy ? [{ key: 'invest', short: 'Invest', color: '#2cc0d6', render: () => strategy }] : []),
@@ -182,10 +192,17 @@ export default function ConsolidatedMobile({
           <div className="card-grid">
             <PortfolioCard title="Mutual Funds" color={ASSET_COLORS.mf} stats={cards.mf} />
             <PortfolioCard title="Stocks & ETFs" color={ASSET_COLORS.stock} stats={cards.stocksEtfs} />
+            {cards.usStocks.count > 0 && <PortfolioCard title="US Stocks" color={ASSET_COLORS.us_stock} stats={cards.usStocks} />}
           </div>
           <AllocationDonut segments={allocation} title="Allocation by class" />
         </>
       ),
+    },
+    {
+      key: 'movers',
+      short: '30d',
+      color: '#ff7b86',
+      render: () => <ThirtyDayMovers holdings={holdings} navMap={navMap} priceHistory={priceHistory} mobile />,
     },
     {
       key: 'mf',
@@ -221,6 +238,17 @@ export default function ConsolidatedMobile({
         </>
       ),
     },
+    ...(usHoldings.length ? [{
+      key: 'us_stock',
+      short: 'US Stocks',
+      color: ASSET_COLORS.us_stock,
+      render: () => (
+        <>
+          <SectionHero label="US Stocks" stats={cards.usStocks} />
+          {usAlloc.length > 0 && <AllocationDonut segments={usAlloc} centerValue={formatINRCompact(cards.usStocks.invested)} centerLabel="invested" />}
+        </>
+      ),
+    }] : []),
     {
       key: 'top',
       short: 'Top',

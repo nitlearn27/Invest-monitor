@@ -25,12 +25,14 @@ export const ASSET_TYPES = {
   stock: { key: 'stock', label: 'Stocks' },
   etf: { key: 'etf', label: 'ETFs' },
   mf: { key: 'mf', label: 'Mutual Funds' },
+  us_stock: { key: 'us_stock', label: 'US Stocks' },
 }
 
 export const ASSET_COLORS = {
   stock: '#5b8cff',
   etf: '#22c7a9',
   mf: '#b07cff',
+  us_stock: '#ffb454',
 }
 
 // Broker platforms a holding can originate from, with a distinct accent colour
@@ -50,6 +52,7 @@ export const SOURCE_PLATFORM = {
   'MF Groww': 'groww',
   'Axis Bank MF': 'axis',
   'My MF Coin': 'coin',
+  'Global Stocks': 'indmoney',
 }
 
 // Resolve a holding's `source` to its platform descriptor (or null if unknown).

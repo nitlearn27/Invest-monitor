@@ -67,7 +67,7 @@ function buildAssets(equityTxns, mfTxns) {
     const symbol = t.symbol || null
     add(
       `e:${t.source}:${symbol || low(t.name)}`,
-      { mf: false, cls: t.type === 'etf' ? 'etf' : 'stock', name: t.name, symbol, source: t.source },
+      { mf: false, cls: t.type || 'stock', name: t.name, symbol, source: t.source },
       { t: t.date.getTime(), sell: t.side === 'SELL', qty: t.qty || 0, price: t.price || 0 },
     )
   }
@@ -142,7 +142,20 @@ function historyFor(asset, navMap, priceHistory) {
     return { t, c }
   }
   const s = asset.symbol ? priceHistory?.get?.(String(asset.symbol).trim().toUpperCase()) : null
-  return s?.t?.length ? s : null
+  if (!s?.t?.length) return null
+  if (asset.cls !== 'us_stock') return s
+  const fx = priceHistory?.get?.('USDINR=X')
+  if (!fx?.t?.length) return null
+  const t = []
+  const c = []
+  let j = -1
+  for (let i = 0; i < s.t.length; i++) {
+    while (j + 1 < fx.t.length && fx.t[j + 1] <= s.t[i]) j++
+    if (j < 0) continue
+    t.push(s.t[i])
+    c.push(s.c[i] * fx.c[j])
+  }
+  return t.length ? { t, c } : null
 }
 
 // Sample grid: every transaction date and month start, daily over the last 6
@@ -181,7 +194,7 @@ function estimateMonthMovers(holdings, baselineSources, timelineKeys, navMap, pr
     if (!offTimeline(h)) continue
     const close = h.current != null ? h.current : h.invested || 0
     if (!(close > 0)) continue
-    const hist = historyFor({ mf: h.type === 'mf', name: h.name, symbol: h.symbol, source: h.source }, navMap, priceHistory)
+    const hist = historyFor({ mf: h.type === 'mf', cls: h.type, name: h.name, symbol: h.symbol, source: h.source }, navMap, priceHistory)
     const px = hist ? walkPrice(hist.t, hist.c, [openT, tNow]) : null
     if (!px || !(px[0] > 0) || !(px[1] > 0)) {
       unpriced.push({ name: h.name, source: h.source, value: close })

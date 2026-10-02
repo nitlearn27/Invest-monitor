@@ -8,7 +8,7 @@ import AllocationDonut from './AllocationDonut.jsx'
 import { EmptyState } from './StateViews.jsx'
 import { monthlyInvestments, mfCapBreakdown, equityBreakdown } from '../lib/monthly.js'
 import { ASSET_COLORS } from '../config.js'
-import { formatINR, formatINRCompact, formatNumber } from '../lib/format.js'
+import { formatINR, formatINRCompact, formatNumber, formatUSD } from '../lib/format.js'
 import SourceLegend from './SourceLegend.jsx'
 import { platformKeyOf } from '../config.js'
 
@@ -18,6 +18,7 @@ const byDateDesc = (a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)
 const SERIES = [
   { key: 'mf', label: 'Mutual Funds', color: ASSET_COLORS.mf },
   { key: 'equity', label: 'Stocks & ETFs', color: ASSET_COLORS.stock },
+  { key: 'us_stock', label: 'US Stocks', color: ASSET_COLORS.us_stock },
 ]
 
 const monthKeyOf = (d) =>
@@ -69,7 +70,8 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
   const visibleMonths = showAllMonths ? displayMonths : displayMonths.slice(0, 3)
   const hiddenCount = displayMonths.length - visibleMonths.length
 
-  const equity = useMemo(() => equityBreakdown(filteredTransactions), [filteredTransactions])
+  const equity = useMemo(() => equityBreakdown(filteredTransactions.filter((t) => t.type !== 'us_stock')), [filteredTransactions])
+  const usEquity = useMemo(() => equityBreakdown(filteredTransactions.filter((t) => t.type === 'us_stock')), [filteredTransactions])
 
   // Month picker for the donuts + detail; defaults to the latest month, or to
   // the month deep-linked from the Consolidated goal card. The tab unmounts on
@@ -91,6 +93,7 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
 
   const selectedCap = capOptions.find((o) => o.month === activeMonth)
   const selectedEq = [...equity.months, equity.all].find((o) => o.month === activeMonth)
+  const selectedUs = [...usEquity.months, usEquity.all].find((o) => o.month === activeMonth)
   const selLabel =
     activeMonth === 'all' ? 'All months' : months.find((m) => m.month === activeMonth)?.label || activeMonth
 
@@ -116,6 +119,7 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
   const ytdTotal = sum(ytdMonths, (m) => m.total)
   const ytdMf = sum(ytdMonths, (m) => m.mf)
   const ytdEquity = sum(ytdMonths, (m) => m.equity)
+  const ytdUs = sum(ytdMonths, (m) => m.us_stock)
 
   // Transactions in the selected month for the detail list.
   const detailMf = useMemo(() => {
@@ -147,6 +151,10 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
         <div className="strip__item">
           <span className="strip__label">Stocks &amp; ETFs · {year}</span>
           <span className="strip__value">{formatINR(ytdEquity)}</span>
+        </div>
+        <div className="strip__item">
+          <span className="strip__label">US Stocks · {year}</span>
+          <span className="strip__value">{formatINR(ytdUs)}</span>
         </div>
         <div className="strip__item">
           <span className="strip__label">Months in {year}</span>
@@ -195,7 +203,7 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
                   <div
                     className="splitbar"
                     role="img"
-                    aria-label={`MF ${formatINR(m.mf)}, Stocks & ETFs ${formatINR(m.equity)}`}
+                    aria-label={`MF ${formatINR(m.mf)}, Stocks & ETFs ${formatINR(m.equity)}, US Stocks ${formatINR(m.us_stock)}`}
                   >
                     {SERIES.map((s) => {
                       const v = m[s.key]
@@ -263,6 +271,12 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
                 <p className="muted donut-empty">No stock/ETF purchases this month</p>
               )}
             </div>
+            {usEquity.all.segments.length > 0 && <div className="donut-pair__item">
+              <h4 className="donut-sub">US Stocks</h4>
+              {selectedUs?.segments.length > 0 ? (
+                <AllocationDonut bare size={148} segments={selectedUs.segments} centerValue={formatINRCompact(selectedUs.total)} centerLabel="invested" />
+              ) : <p className="muted donut-empty">No US stock purchases this month</p>}
+            </div>}
           </div>
         </div>
       </div>
@@ -319,7 +333,7 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
               {detailEq.length > 0 && (
                 <section className="txn-group" style={{ '--g': ASSET_COLORS.stock }}>
                   <div className="txn-group__head">
-                    <span className="txn-group__title">Stocks &amp; ETFs</span>
+                    <span className="txn-group__title">Stocks, ETFs &amp; US Stocks</span>
                     <span className="txn-group__count">{detailEq.length}</span>
                   </div>
                   <div className="dtable-wrap">
@@ -344,12 +358,12 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
                                 {isSell && <span className="sip-note" style={{ color: 'var(--neg)' }}> · SELL</span>}
                               </td>
                               <td className="dt">{fmtDate(t.date)}</td>
-                              <td className="ta-r">{formatNumber(t.price)}</td>
+                              <td className="ta-r">{t.type === 'us_stock' ? formatUSD(t.priceUsd) : formatNumber(t.price)}</td>
                               <td className="ta-r">
                                 {isSell ? '-' : ''}{formatNumber(t.qty)}
                               </td>
                               <td className="ta-r">
-                                {isSell ? '-' : ''}{formatINR(t.value != null ? t.value : val)}
+                                {t.type === 'us_stock' && t.price == null ? '—' : <>{isSell ? '-' : ''}{formatINR(t.value != null ? t.value : val)}</>}
                               </td>
                             </tr>
                           )

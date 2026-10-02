@@ -33,6 +33,10 @@ function toHolding(g, source) {
     type: g.type,
     qty: g.qty,
     avgPrice: g.qty > EPS ? g.invested / g.qty : null,
+    ...(g.type === 'us_stock' ? {
+      investedUsd: g.investedUsd,
+      avgPriceUsd: g.qty > EPS ? g.investedUsd / g.qty : null,
+    } : null),
     invested: g.invested,
     current: null,
     pnl: null,
@@ -45,7 +49,7 @@ function toHolding(g, source) {
 }
 
 // Broker stock/ETF transaction sheets complete enough to derive holdings from.
-export const DERIVED_EQUITY_SOURCES = ['My Stocks', 'Stocks Groww']
+export const DERIVED_EQUITY_SOURCES = ['My Stocks', 'Stocks Groww', 'Global Stocks']
 
 // Stocks/ETFs from one broker's transactions sheet. BUYs accumulate qty and
 // cost; SELLs reduce qty and release cost at the running average (so avgPrice
@@ -59,16 +63,18 @@ export function deriveEquityHoldings(transactions = [], source = 'My Stocks') {
     if (t.source !== source || !t.qty) continue
     const k = t.symbol || nameKeyOf(t)
     if (!groups.has(k)) {
-      groups.set(k, { name: t.name, symbol: t.symbol || null, type: t.type || 'stock', qty: 0, invested: 0 })
+      groups.set(k, { name: t.name, symbol: t.symbol || null, type: t.type || 'stock', qty: 0, invested: 0, investedUsd: 0 })
     }
     const g = groups.get(k)
     if (t.side === 'SELL') {
       const sold = Math.min(t.qty, g.qty)
       if (g.qty > EPS) g.invested -= sold * (g.invested / g.qty)
+      if (g.type === 'us_stock' && g.qty > EPS) g.investedUsd -= sold * (g.investedUsd / g.qty)
       g.qty -= sold
     } else {
       g.qty += t.qty
       g.invested += t.qty * (t.price || 0)
+      if (g.type === 'us_stock') g.investedUsd += t.qty * (t.priceUsd || 0)
     }
   }
   return [...groups.values()].filter((g) => g.qty > EPS).map((g) => toHolding(g, source))

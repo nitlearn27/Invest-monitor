@@ -4,6 +4,7 @@ import GoalTracker from './GoalTracker.jsx'
 import AllocationDonut from './AllocationDonut.jsx'
 import ConsolidatedMobile from './ConsolidatedMobile.jsx'
 import SourceLegend from './SourceLegend.jsx'
+import ThirtyDayMovers from './ThirtyDayMovers.jsx'
 import { sourceRowClassName, sourceRowStyle } from '../lib/sourceStyle.js'
 import {
   cardSummaries,
@@ -94,7 +95,10 @@ export default function ConsolidatedTab({
       <div className="card-grid">
         <PortfolioCard title="Mutual Funds" color={ASSET_COLORS.mf} stats={cards.mf} />
         <PortfolioCard title="Stocks & ETFs" color={ASSET_COLORS.stock} stats={cards.stocksEtfs} />
+        {cards.usStocks.count > 0 && <PortfolioCard title="US Stocks" color={ASSET_COLORS.us_stock} stats={cards.usStocks} />}
       </div>
+
+      <ThirtyDayMovers holdings={holdings} navMap={navMap} priceHistory={priceHistory} />
 
       <div className="two-col two-col--top">
         {mfClass.length > 0 && (

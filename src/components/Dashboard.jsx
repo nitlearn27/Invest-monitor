@@ -34,6 +34,7 @@ import {
 } from '../lib/navs.js'
 import { MARKET_CODES } from '../lib/market.js'
 import { withDerivedHoldings } from '../lib/derive.js'
+import { convertUsTransactions, fetchUsdInr, USD_INR_SYMBOL } from '../lib/currency.js'
 import { withRecurringSips } from '../lib/monthly.js'
 
 // A NAV date older than this reads as stale on the MF tab's stamp. Measured on
@@ -47,6 +48,7 @@ const TABS = [
   { key: 'stock', label: 'Stocks' },
   { key: 'mf', label: 'Mutual Funds' },
   { key: 'etf', label: 'ETFs' },
+  { key: 'us_stock', label: 'US Stocks' },
   { key: 'transactions', label: 'Transactions' },
   { key: 'analysis', label: 'Portfolio Analysis' },
   { key: 'projection', label: 'Projection' },
@@ -73,6 +75,7 @@ export default function Dashboard() {
   const [priceHistory, setPriceHistory] = useState(() => new Map())
   const [pricesAt, setPricesAt] = useState(null)
   const [pricesBusy, setPricesBusy] = useState(false)
+  const [fxQuote, setFxQuote] = useState(null)
   // Live MF NAVs (Map<schemeCode, { history, latest, ts }>) from mfapi.in; the
   // sheet's stale MF "Current value" is the fallback for any fund not resolved
   // here.
@@ -126,9 +129,10 @@ export default function Dashboard() {
       const symbols = [
         ...new Set([
           ...dataset.holdings
-            .filter((h) => (h.type === 'stock' || h.type === 'etf') && h.symbol)
+            .filter((h) => (h.type === 'stock' || h.type === 'etf' || h.type === 'us_stock') && h.symbol)
             .map((h) => h.symbol),
           ...dataset.transactions.filter((t) => t.symbol).map((t) => t.symbol),
+          ...(dataset.transactions.some((t) => t.type === 'us_stock') ? [USD_INR_SYMBOL] : []),
         ]),
       ]
       if (symbols.length === 0) return
@@ -178,17 +182,23 @@ export default function Dashboard() {
     [dataset],
   )
 
+  const loadFx = useCallback(async (force) => {
+    if (!dataset?.transactions.some((t) => t.type === 'us_stock')) return
+    const quote = await fetchUsdInr({ force })
+    if (quote) setFxQuote(quote)
+  }, [dataset])
+
   // Refresh prices + NAVs whenever the dataset changes (load from Drive or cache).
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       if (cancelled) return
-      await Promise.all([loadPrices(false), loadNavs(false)])
+      await Promise.all([loadPrices(false), loadNavs(false), loadFx(false)])
     })()
     return () => {
       cancelled = true
     }
-  }, [loadPrices, loadNavs])
+  }, [loadPrices, loadNavs, loadFx])
 
   // This static app has no background server. Check while visible and on return;
   // the persisted engine catches up missed NAV dates after the app was closed.
@@ -217,13 +227,17 @@ export default function Dashboard() {
   const view = useMemo(() => {
     if (!dataset) return null
     const mfTransactions = enrichMfTransactions(withRecurringSips(dataset.mfTransactions), navMap)
-    const holdings = withDerivedHoldings(dataset.holdings, dataset.transactions, mfTransactions)
+    const usdInr = fxQuote?.rate ?? priceMap.get(USD_INR_SYMBOL)?.price ?? null
+    const transactions = convertUsTransactions(dataset.transactions, usdInr)
+    const holdings = withDerivedHoldings(dataset.holdings, transactions, mfTransactions)
     return {
       ...dataset,
-      holdings: enrichMfHoldings(enrichHoldings(holdings, priceMap), navMap),
+      transactions,
+      holdings: enrichMfHoldings(enrichHoldings(holdings, priceMap, usdInr), navMap),
       mfTransactions,
+      usdInr,
     }
-  }, [dataset, priceMap, navMap])
+  }, [dataset, priceMap, navMap, fxQuote])
 
   const strategies = useCorrectionStrategies(view?.holdings, navMap, strategyTick)
 
@@ -233,7 +247,8 @@ export default function Dashboard() {
   const refreshPrices = useCallback(() => {
     if (pricesConfigured()) loadPrices(true)
     loadNavs(true)
-  }, [loadPrices, loadNavs])
+    loadFx(true)
+  }, [loadPrices, loadNavs, loadFx])
 
   // What dates the numbers on the asset tabs. Funds report the NAV's OWN date —
   // the day its price was struck, which is what the Current column is worth;
@@ -321,6 +336,9 @@ export default function Dashboard() {
 
       {status === 'ready' && view && (
         <>
+          {view.transactions.some((t) => t.type === 'us_stock') && !(view.usdInr > 0) && (
+            <div className="container" role="alert">USD/INR quote unavailable. US stock rupee values are waiting for a price refresh.</div>
+          )}
           <main className="container">
             {tab === 'consolidated' && (
               <ConsolidatedTab
@@ -383,6 +401,9 @@ export default function Dashboard() {
                   priceHistory={priceHistory}
                 />
               </>
+            )}
+            {tab === 'us_stock' && (
+              <AssetTab type="us_stock" label="US Stocks" holdings={view.holdings} freshness={equityFreshness} />
             )}
             {tab === 'transactions' && (
               <TransactionsTab

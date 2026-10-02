@@ -4,6 +4,7 @@
 // The `with` attribute keeps this importable from Node scripts (build-mf-schemes)
 // as well as Vite.
 import NAME_SYMBOLS from '../../resources/name-symbols.json' with { type: 'json' }
+import US_NAME_SYMBOLS from '../../resources/us-name-symbols.json' with { type: 'json' }
 
 const norm = (v) => {
   if (v == null) return ''
@@ -581,6 +582,59 @@ function parseStockTransactions(sheet, isGroww = false) {
   return transactions.length ? { transactions } : null
 }
 
+// The Global Stocks sheet is denominated in USD. Keep its trade price in USD
+// until the view has a current USD/INR quote; dollar figures must never enter
+// the rupee aggregates unchanged.
+function parseGlobalStocks(sheet) {
+  const header = findHeader(sheet.rows, ['date', 'quantity']) || findHeader(sheet.rows, ['date', 'qty']) || findHeader(sheet.rows, ['date', 'shares'])
+  if (!header) return null
+  const c = {
+    date: col(header.colMap, 'date'),
+    name: col(header.colMap, 'stock name', 'company name', 'security name', 'instrument', 'name', 'stock'),
+    symbol: col(header.colMap, 'ticker', 'symbol'),
+    qty: col(header.colMap, 'quantity', 'qty', 'shares'),
+    price: col(header.colMap, 'purchase price', 'trade price', 'executed price', 'price per share', 'price', 'rate'),
+    amount: col(header.colMap, 'amount', 'total'),
+    side: col(header.colMap, 'transaction type', 'side', 'action', 'type', 'order type'),
+    status: col(header.colMap, 'status'),
+  }
+  if ((c.name < 0 && c.symbol < 0) || (c.price < 0 && c.amount < 0)) return null
+  const transactions = []
+  for (let i = header.index + 1; i < sheet.rows.length; i++) {
+    const row = sheet.rows[i] || []
+    const name = String(row[c.name] ?? row[c.symbol] ?? '').trim()
+    if (!name) continue
+    const rawSide = String(row[c.side] ?? '').trim().toLowerCase()
+    const status = String(row[c.status] ?? '').trim()
+    const statusSide = /^(buy|sell)$/i.test(status) ? status.toLowerCase() : ''
+    if (/failed|cancelled|rejected|pending/i.test(status)) continue
+    const qty = toNum(row[c.qty])
+    const dollar = (v) => parseMoney(v == null ? null : String(v).replace(/\bUSD\b|\$/gi, '').trim())
+    const priceUsd = c.price >= 0 ? dollar(row[c.price]) : null
+    const amountUsd = c.amount >= 0 ? dollar(row[c.amount]) : null
+    const unitPriceUsd = priceUsd ?? (amountUsd != null && qty > 0 ? amountUsd / qty : null)
+    if (!(qty > 0) || !(unitPriceUsd >= 0)) continue
+    const rawTicker = String(row[c.symbol] ?? '').trim().toUpperCase()
+    const nameKey = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    const ticker = rawTicker || US_NAME_SYMBOLS[nameKey] || (/^[A-Z][A-Z0-9.-]{0,9}$/.test(name) ? name : '')
+    transactions.push({
+      date: parseNumericDmy(row[c.date]),
+      name,
+      symbol: ticker ? `US:${ticker}` : null,
+      isin: null,
+      type: 'us_stock',
+      side: /sell|withdraw|redeem/.test(statusSide || rawSide) ? 'SELL' : 'BUY',
+      qty,
+      priceUsd: unitPriceUsd,
+      price: null,
+      ...(rawSide.startsWith('opening') ? { opening: true } : null),
+      status,
+      source: 'Global Stocks',
+    })
+  }
+  return transactions.length ? { transactions } : null
+}
+
 // --- "Projection" page (goal tracking). A table with header
 // "Name | Amount -2025 Dec | 2026-Dec | Current | Shortfall | Sheets". The
 // Sheets column names which holding `source`s feed each goal (Current/Shortfall
@@ -626,6 +680,14 @@ export function buildDataset(parsedFiles) {
     const asOf = file.modifiedTime ? new Date(file.modifiedTime) : null
     const addHoldings = (hs) => holdings.push(...hs.map((h) => ({ ...h, asOf })))
     for (const sheet of file.sheets) {
+      if (/^global stocks(?:\.[^.]+)?$/i.test(file.fileName || '') || /^global stocks$/i.test(sheet.name || '')) {
+        const global = parseGlobalStocks(sheet)
+        if (global) {
+          transactions.push(...global.transactions)
+          recognized.push({ file: file.fileName, sheet: sheet.name, type: 'global-stock-transactions' })
+          continue
+        }
+      }
       const myStocks = parseMyStocks(sheet)
       if (myStocks) {
         addHoldings(myStocks.holdings)

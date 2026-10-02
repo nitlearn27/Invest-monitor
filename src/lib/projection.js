@@ -7,7 +7,7 @@
 // sources; Shortfall is what's left to reach the Dec-2026 target.
 
 // The `source` labels set by the parsers in classify.js.
-const KNOWN_SOURCES = ['My MF Coin', 'My MFs', 'My Stocks', 'Axis Bank MF', 'MF Groww', 'Stocks Groww']
+const KNOWN_SOURCES = ['My MF Coin', 'My MFs', 'My Stocks', 'Axis Bank MF', 'MF Groww', 'Stocks Groww', 'Global Stocks']
 
 const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0)
 
