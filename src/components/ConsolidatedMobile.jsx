@@ -166,7 +166,7 @@ export default function ConsolidatedMobile({
   }))
 
   const sections = [
-    ...(strategy ? [{ key: 'invest', short: 'Invest', color: '#2cc0d6', render: () => strategy }] : []),
+    ...(strategy ? [{ key: 'invest', short: 'Invest', color: '#ff9a90', render: () => strategy }] : []),
     {
       key: 'goal',
       short: 'Goal',

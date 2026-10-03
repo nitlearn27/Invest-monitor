@@ -10,8 +10,8 @@ import EquityWhatIf from './EquityWhatIf.jsx'
 import AnalysisTab from './AnalysisTab.jsx'
 import ProjectionTab from './ProjectionTab.jsx'
 import CorrectionStrategyCard from './CorrectionStrategyCard.jsx'
-import { useCorrectionStrategies } from '../lib/useCorrectionStrategies.js'
-import { DEFAULT_CORRECTION_STRATEGY, STRATEGY_POLL_MS } from '../lib/correctionStrategy.js'
+import { STRATEGY_POLL_MS } from '../lib/correctionStrategy.js'
+import { INVEST_WATCHLIST } from '../lib/investOverview.js'
 import { Loader, ErrorState, EmptyState } from './StateViews.jsx'
 import { driveConfigured, pricesConfigured } from '../config.js'
 import { fetchDriveWorkbooks } from '../lib/drive.js'
@@ -81,7 +81,6 @@ export default function Dashboard() {
   // here.
   const [navMap, setNavMap] = useState(() => new Map())
   const [navsBusy, setNavsBusy] = useState(false)
-  const [strategyTick, setStrategyTick] = useState(0)
 
   const loadFromDrive = useCallback(async () => {
     setStatus('loading')
@@ -161,7 +160,7 @@ export default function Dashboard() {
     async (force) => {
       const codes = [
         ...new Set([
-          DEFAULT_CORRECTION_STRATEGY.schemeCode,
+          ...INVEST_WATCHLIST.map((fund) => fund.schemeCode),
           ...schemeCodesFor(dataset?.holdings, false),
           ...schemeCodesFor(dataset ? withRecurringSips(dataset.mfTransactions) : [], true),
           // Index funds standing in for the mid/small-cap market on the
@@ -205,7 +204,6 @@ export default function Dashboard() {
   useEffect(() => {
     const check = () => {
       if (document.visibilityState !== 'visible') return
-      setStrategyTick((value) => value + 1)
       void loadNavs(true)
     }
     const timer = window.setInterval(check, STRATEGY_POLL_MS)
@@ -238,8 +236,6 @@ export default function Dashboard() {
       usdInr,
     }
   }, [dataset, priceMap, navMap, fxQuote])
-
-  const strategies = useCorrectionStrategies(view?.holdings, navMap, strategyTick)
 
   // Refresh always re-pulls from Drive (when configured).
   const refresh = driveConfigured() ? loadFromDrive : null
@@ -313,7 +309,7 @@ export default function Dashboard() {
       />
 
       {tab === 'consolidated' && (status !== 'ready' || !view) && <div className="container">
-        <CorrectionStrategyCard monitor={strategies} busy={navsBusy} onRefresh={() => loadNavs(true)} />
+        <CorrectionStrategyCard navMap={navMap} transactions={view?.transactions} mfTransactions={view?.mfTransactions} busy={navsBusy} onRefresh={() => loadNavs(true)} />
       </div>}
 
       {status === 'loading' && <Loader label="Fetching your reports…" />}
@@ -342,7 +338,7 @@ export default function Dashboard() {
           <main className="container">
             {tab === 'consolidated' && (
               <ConsolidatedTab
-                strategy={<CorrectionStrategyCard monitor={strategies} busy={navsBusy} onRefresh={() => loadNavs(true)} />}
+                strategy={<CorrectionStrategyCard navMap={navMap} transactions={view.transactions} mfTransactions={view.mfTransactions} busy={navsBusy} onRefresh={() => loadNavs(true)} />}
                 holdings={view.holdings}
                 transactions={view.transactions}
                 mfTransactions={view.mfTransactions}

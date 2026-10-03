@@ -5,6 +5,26 @@ import {
 const DB_NAME = 'invest-monitor:strategies'
 const STORES = ['strategies', 'months', 'recommendations']
 
+// Upgrade only untouched old defaults. Custom strategies stay as saved.
+const OLD_DEFAULT = {
+  monthlyBudget: 100000, initialAllocation: 55, cutoffDay: 15,
+  levels: [{ drawdown: 3, allocation: 20 }, { drawdown: 5, allocation: 15 }, { drawdown: 7, allocation: 10 }],
+}
+
+function usesOldDefault(config) {
+  return config.monthlyBudget === OLD_DEFAULT.monthlyBudget
+    && config.initialAllocation === OLD_DEFAULT.initialAllocation
+    && config.cutoffDay === OLD_DEFAULT.cutoffDay
+    && JSON.stringify(config.levels) === JSON.stringify(OLD_DEFAULT.levels)
+}
+
+function usesNewDefault(config) {
+  return config.monthlyBudget === DEFAULT_CORRECTION_STRATEGY.monthlyBudget
+    && config.initialAllocation === DEFAULT_CORRECTION_STRATEGY.initialAllocation
+    && config.cutoffDay === DEFAULT_CORRECTION_STRATEGY.cutoffDay
+    && JSON.stringify(config.levels) === JSON.stringify(DEFAULT_CORRECTION_STRATEGY.levels)
+}
+
 // All read/modify/write operations use ONE overlapping readwrite transaction.
 // IndexedDB serializes these across tabs/connections. A unique multi-entry index
 // additionally prevents the same monthly trigger appearing in two alerts.
@@ -42,7 +62,9 @@ export function openStrategyStore(factory = globalThis.indexedDB, name = DB_NAME
               snapshot[store] = read.result
               if (--pending !== 0) return
               try {
-                result = change(snapshot, (table, value) => tx.objectStore(table).put(value))
+                result = change(snapshot,
+                  (table, value) => tx.objectStore(table).put(value),
+                  (table, key) => tx.objectStore(table).delete(key))
               } catch (error) {
                 failure = error
                 tx.abort()
@@ -55,7 +77,7 @@ export function openStrategyStore(factory = globalThis.indexedDB, name = DB_NAME
       resolve({
         close: () => db.close(),
         read: () => transaction('readonly', (snapshot) => snapshot),
-        monitor: (funds, navMap, asOf) => transaction('readwrite', (snapshot, put) => {
+        monitor: (funds, navMap, asOf) => transaction('readwrite', (snapshot, put, remove) => {
           const month = asOf.slice(0, 7)
           const strategies = new Map(snapshot.strategies.map((config) => [config.schemeCode, config]))
           const months = new Map(snapshot.months.map((record) => [record.id, record]))
@@ -67,13 +89,30 @@ export function openStrategyStore(factory = globalThis.indexedDB, name = DB_NAME
               put('strategies', config)
             }
           }
+          for (const [code, config] of strategies) {
+            if (!usesOldDefault(config)) continue
+            const updated = validateStrategy({ ...config, ...DEFAULT_CORRECTION_STRATEGY,
+              schemeCode: code, fundName: config.fundName })
+            updated.startedMonth = config.startedMonth
+            strategies.set(code, updated)
+            put('strategies', updated)
+          }
           for (const config of strategies.values()) {
             const history = navMap.get(config.schemeCode)?.history || []
             // Resume missed months since tracking began, preserving every month's
             // configuration snapshot and catching up on actual NAV observations.
             for (let cursor = config.startedMonth; cursor <= month;) {
               const id = `${config.schemeCode}:${cursor}`
-              const previous = months.get(id) || createStrategyMonth(config, cursor)
+              const existing = months.get(id)
+              const replan = cursor === month && existing
+                && usesOldDefault(existing.config) && usesNewDefault(config)
+              if (replan) {
+                for (const item of snapshot.recommendations.filter((item) => item.monthId === id)) {
+                  recommendations.delete(item.id)
+                  remove('recommendations', item.id)
+                }
+              }
+              const previous = existing && !replan ? existing : createStrategyMonth(config, cursor)
               const evaluated = evaluateStrategyMonth(previous, history, asOf)
               months.set(id, evaluated.state)
               put('months', evaluated.state)
@@ -88,16 +127,24 @@ export function openStrategyStore(factory = globalThis.indexedDB, name = DB_NAME
           }
           return { strategies: [...strategies.values()], months: [...months.values()], recommendations: [...recommendations.values()] }
         }),
-        saveConfig: (input, asOf) => transaction('readwrite', (snapshot, put) => {
+        saveConfig: (input, asOf, navMap = new Map()) => transaction('readwrite', (snapshot, put, remove) => {
           const config = validateStrategy(input)
           const existing = snapshot.strategies.find((item) => item.schemeCode === config.schemeCode)
           const saved = { ...config, startedMonth: existing?.startedMonth || asOf.slice(0, 7) }
           put('strategies', saved)
           const current = snapshot.months.find((item) => item.id === `${config.schemeCode}:${asOf.slice(0, 7)}`)
-          // Never reinterpret already-issued recommendations under a new budget.
-          const deferred = Boolean(current?.allocatedPaise)
-          if (current && !deferred) put('months', createStrategyMonth(saved, current.month))
-          return { deferred }
+          if (current) {
+            for (const item of snapshot.recommendations.filter((item) => item.monthId === current.id)) {
+              remove('recommendations', item.id)
+            }
+            const evaluated = evaluateStrategyMonth(
+              createStrategyMonth(saved, current.month), navMap.get(config.schemeCode)?.history || [], asOf)
+            put('months', evaluated.state)
+            for (const recommendation of evaluated.recommendations) {
+              put('recommendations', { ...recommendation, createdAt: new Date().toISOString() })
+            }
+          }
+          return { deferred: false }
         }),
         review: (id) => transaction('readwrite', (snapshot, put) => {
           const record = snapshot.recommendations.find((item) => item.id === id)

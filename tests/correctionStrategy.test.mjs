@@ -11,13 +11,13 @@ const run = (rows, asOf = '2026-09-30', config = defaults, month = '2026-09') =>
 
 test('no correction: initial 55%, then the exact remainder at cutoff', () => {
   const result = run([['2026-09-01', 100], ['2026-09-14', 102], ['2026-09-15', 103]])
-  assert.deepEqual(result.recommendations.map((r) => [r.kind, r.amountPaise / 100]), [['initial', 55000], ['cutoff', 45000]])
-  assert.equal(result.state.allocatedPaise, 10000000)
+  assert.deepEqual(result.recommendations.map((r) => [r.kind, r.amountPaise / 100]), [['initial', 110000], ['cutoff', 90000]])
+  assert.equal(result.state.allocatedPaise, 20000000)
   assert.equal(result.state.remainingPaise, 0)
   assert.equal(result.state.status, 'complete')
 })
 
-for (const [nav, amount, levels] of [[97, 20000, [3]], [94.6, 35000, [3, 5]], [92.9, 45000, [3, 5, 7]]]) {
+for (const [nav, amount, levels] of [[97, 70000, [2, 3]], [94.6, 90000, [2, 3, 5]], [92.9, 90000, [2, 3, 5]]]) {
   test(`direct correction to NAV ${nav}: all crossed levels share one recommendation`, () => {
     const result = run([['2026-09-01', 100], ['2026-09-02', nav]])
     assert.equal(result.recommendations.length, 2)
@@ -27,9 +27,10 @@ for (const [nav, amount, levels] of [[97, 20000, [3]], [94.6, 35000, [3, 5]], [9
   })
 }
 
-test('exact 5% and 7% boundaries are inclusive', () => {
-  assert.equal(run([['2026-09-01', 100], ['2026-09-02', 95]]).state.allocatedPaise, 9000000)
-  assert.equal(run([['2026-09-01', 100], ['2026-09-02', 93]]).state.allocatedPaise, 10000000)
+test('exact 2%, 3%, and 5% boundaries are inclusive', () => {
+  assert.equal(run([['2026-09-01', 100], ['2026-09-02', 98]]).state.allocatedPaise, 15000000)
+  assert.equal(run([['2026-09-01', 100], ['2026-09-02', 97]]).state.allocatedPaise, 18000000)
+  assert.equal(run([['2026-09-01', 100], ['2026-09-02', 95]]).state.allocatedPaise, 20000000)
 })
 
 test('repeated low NAV and replaying the same history do not duplicate triggers', () => {
@@ -38,14 +39,14 @@ test('repeated low NAV and replaying the same history do not duplicate triggers'
   const again = evaluateStrategyMonth(first.state, [...rows, ...history([['2026-09-04', 96]])], '2026-09-04')
   assert.equal(first.recommendations.length, 2)
   assert.equal(again.recommendations.length, 0)
-  assert.equal(again.state.allocatedPaise, 7500000)
+  assert.equal(again.state.allocatedPaise, 18000000)
 })
 
 test('a new monthly high, not initial NAV, is the drawdown basis', () => {
   const result = run([['2026-08-31', 200], ['2026-09-01', 100], ['2026-09-02', 110], ['2026-09-03', 106.7]])
   assert.equal(result.state.monthlyHighNAV, 110)
   assert.ok(Math.abs(result.state.currentDrawdown - 3) < 1e-8)
-  assert.equal(result.recommendations[1].amountPaise, 2000000)
+  assert.equal(result.recommendations[1].amountPaise, 7000000)
 })
 
 test('recovery then a new high does not re-arm an executed level', () => {
@@ -58,7 +59,7 @@ test('Sunday cutoff and Monday holiday wait until the next actual NAV', () => {
   // 15 November 2026 is Sunday; treat the 16th as a no-NAV holiday.
   const first = run([['2026-11-02', 100], ['2026-11-13', 101]], '2026-11-16', defaults, '2026-11')
   assert.equal(first.state.cutoffStatus, 'waiting_for_nav')
-  assert.equal(first.state.remainingPaise, 4500000)
+  assert.equal(first.state.remainingPaise, 9000000)
   const next = evaluateStrategyMonth(first.state, history([['2026-11-17', 101]]), '2026-11-17')
   assert.equal(next.recommendations[0].kind, 'cutoff')
   assert.equal(next.state.cutoffNAVDate, '2026-11-17')
@@ -72,7 +73,7 @@ test('missing weekday cutoff NAV also waits; calendar time alone never executes'
   const next = evaluateStrategyMonth(result.state, history([['2026-09-16', 90]]), '2026-09-16')
   assert.equal(next.recommendations.length, 1)
   assert.equal(next.recommendations[0].kind, 'cutoff')
-  assert.equal(next.recommendations[0].amountPaise, 4500000)
+  assert.equal(next.recommendations[0].amountPaise, 9000000)
 })
 
 test('fresh monthly state ignores the previous monthly high and resets triggers', () => {
@@ -83,7 +84,7 @@ test('fresh monthly state ignores the previous monthly high and resets triggers'
   assert.equal(october.state.monthlyHighNAV, 100)
   assert.equal(october.state.currentDrawdown, 0)
   assert.deepEqual(october.state.executedTriggers, ['initial'])
-  assert.equal(october.state.remainingPaise, 4500000)
+  assert.equal(october.state.remainingPaise, 9000000)
 })
 
 test('completion suppresses new recommendations while high/current NAV remain live', () => {
@@ -145,5 +146,5 @@ test('India date rolls over independently of browser timezone', () => {
 test('combined correction message includes actual drawdown, levels and amount', () => {
   const result = run([['2026-09-01', 100], ['2026-09-02', 94.6]])
   assert.equal(recommendationMessage(result.recommendations[1], (value) => `₹${value.toLocaleString('en-IN')}`),
-    '5.4% correction reached. 3% and 5% levels triggered. Invest ₹35,000.')
+    '5.4% correction reached. 2%, 3% and 5% levels triggered. Invest ₹90,000.')
 })

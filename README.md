@@ -141,73 +141,31 @@ current value, market price and P&L are recomputed **live** in the browser:
 - New stock/ETF holdings with descriptive names may need a line added to
   `resources/name-symbols.json` (broker name → NSE ticker).
 
-## Monthly correction strategy
+## Invest overview
 
-On mobile, the opening Consolidated page has a dedicated **Invest** tab in the
-bottom swipeable section dock. It shows a monthly NAV sparkline, drawdown metric,
-budget progress bar and trigger timeline. Tap the other tabs for Goal, Total,
-Funds and Stocks; scrolling the dock does not change the active view. Detailed
-alerts and history expand on demand, and the info icon holds the strategy rules.
-On desktop the strategy remains the first card. Select any mapped portfolio mutual fund (Direct/Regular plans remain
-separate) to see its own NAV, monthly high, drawdown, allocation progress and
-recommendations. Unmapped funds are listed as unavailable. Invesco India Mid Cap
-Direct Growth, AMFI **120403**, is always available as the default selection.
+The mobile Invest tab opens on the fund with the lowest current-month NAV
+change. The dropdown is sorted from the largest loss to the largest gain and
+contains only Invesco
+Midcap, Invesco Smallcap, Kotak Midcap, Quant Small Cap, and Edelweiss Technology.
+Changing the fund changes the NAV chart, not the overall budget.
+Each chart plots daily NAV percentage change from that fund's last published
+NAV in the previous calendar month. The first trading day therefore shows its
+actual gain or loss. The previous close has its own starting point before the
+1st, and the date axis covers the full calendar month so plotted days stay in
+place. Zero remains centered vertically. The dropdown uses the same
+previous-month baseline for sorting.
 
-Each fund starts with an independent **₹1,00,000** monthly budget: **55%** on the
-first published NAV date, **20% / 15% / 10%** at **3% / 5% / 7%** drawdowns, and
-the entire remainder on the **15th**, or the next published NAV date. These are
-per-fund budgets, not portions of a shared portfolio budget. Use **Configure** to
-change the budget, initial percentage, correction levels and cutoff day. Levels
-can be added/removed; allocations must total 100%. Cutoff days exceeding a
-month's length are clamped to its last day.
+The monthly budget is **₹2,00,000 across all investments**. **Invested this
+month** uses the same total as the Monthly tab: recorded mutual fund buys and
+SIPs, stock and ETF buys, and US stock buys. **Left to invest** is the budget
+minus that total, with a minimum of zero. The displayed 2%, 3%, and 5%
+drawdown amounts are ₹40,000, ₹30,000, and ₹20,000 respectively, based on
+the overall monthly budget.
 
-Drawdown is `(highest NAV in this calendar month − current NAV) / highest NAV × 100`.
-The engine processes NAV dates chronologically, triggers all crossed pending
-levels together, and never recommends more than the monthly budget. Cutoff takes
-precedence over correction levels on the cutoff NAV date. A completed month's
-NAV metrics continue updating without issuing more allocation recommendations.
-Dates use the Indian calendar, independently of the browser's timezone.
-
-**Allocated means recommended, not invested.** Recommendations do not create
-transactions or change holdings. **Mark reviewed** acknowledges an alert without
-claiming a purchase or freeing its allocation. The card shows outstanding current
-month recommendations and preserves a dated recommendation log, including pending
-alerts from earlier months. On first use it catches up from the start of the
-current month; later checks catch up missed NAV dates/months since tracking began.
-Historical trigger dates are displayed, so a catch-up alert is distinguishable
-from a trigger on the latest NAV.
-
-Once a month has recommended money, configuration changes apply **next month**;
-its budget and rules are frozen to protect already-issued recommendations. If
-there are no recommendations yet, settings apply immediately. The editable form
-shows the saved settings; current-month metrics always use that month's snapshot.
-
-This repository is a static React app with no server database, cron scheduler or
-notification service. The feature reuses `fetchNavs` and its history/cache; checks
-also run every 30 minutes while visible, on focus/return and on reconnect. There
-are **no checks or push notifications while the app is closed**. `STRATEGY_POLL_MS`
-and default strategy values live in `src/lib/correctionStrategy.js`.
-
-Persistent schema: IndexedDB **`invest-monitor:strategies`**, version **1**, created
-automatically on first use:
-
-| Store | Key | Contents |
-|---|---|---|
-| `strategies` | AMFI `schemeCode` | Saved per-fund configuration, tracking start month |
-| `months` | `schemeCode:YYYY-MM` | Frozen config, integer-paise budget/allocated/remaining, current/monthly-high NAV, drawdown, trigger keys, NAV/cutoff dates and statuses |
-| `recommendations` | Monthly ID + trigger keys | Amount, component levels, trigger NAV/date, creation date, pending/reviewed status |
-
-An overlapping IndexedDB read/write transaction commits monthly state and alerts
-together, serializing concurrent jobs across tabs. A unique multi-entry
-`triggerKeys` index also rejects duplicate monthly triggers. Storage errors are
-shown rather than silently issuing unsaved recommendations. This guarantee and
-history are **local to this browser and site origin**; other devices have separate
-records, and clearing site data removes the history. No server migration is
-required. The pure strategy evaluator takes NAV history as data and can be reused
-for backtesting without the live API.
-
-Run `npm test` for trigger, cutoff, monthly rollover, configuration, persistence
-and concurrency coverage (using Node's test runner and `fake-indexeddb`).
+The Invest card's percentage and 2%, 3%, and 5% plan use the last NAV of the
+previous calendar month as their comparison point.
+NAVs update while the app is open and when it returns to focus. The budget
+total updates when the portfolio transactions refresh.
 
 ## Platform colours
 

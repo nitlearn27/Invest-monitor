@@ -13,15 +13,18 @@ const getStore = () => {
 }
 
 export function strategyFunds(holdings) {
-  const funds = new Map([[DEFAULT_CORRECTION_STRATEGY.schemeCode, {
-    schemeCode: DEFAULT_CORRECTION_STRATEGY.schemeCode,
-    fundName: DEFAULT_CORRECTION_STRATEGY.fundName,
-  }]])
+  const funds = new Map()
   for (const holding of holdings || []) {
     if (holding.type !== 'mf') continue
     const scheme = schemeFor(holding.name, holding.source)
     if (scheme) funds.set(scheme.schemeCode, { schemeCode: scheme.schemeCode, fundName: scheme.schemeName })
     else funds.set(`unmapped:${holding.name}`, { schemeCode: null, fundName: holding.name })
+  }
+  if (!funds.size) {
+    funds.set(DEFAULT_CORRECTION_STRATEGY.schemeCode, {
+      schemeCode: DEFAULT_CORRECTION_STRATEGY.schemeCode,
+      fundName: DEFAULT_CORRECTION_STRATEGY.fundName,
+    })
   }
   return [...funds.values()]
 }
@@ -60,10 +63,10 @@ export function useCorrectionStrategies(holdings, navMap, tick) {
     }
   }, [refresh])
   const saveConfig = useCallback(async (config) => {
-    const result = await (await getStore()).saveConfig(config, indiaDate())
+    const result = await (await getStore()).saveConfig(config, indiaDate(), navMap)
     changed()
     return result
-  }, [changed])
+  }, [changed, navMap])
   const review = useCallback(async (id) => {
     await (await getStore()).review(id)
     changed()

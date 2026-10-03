@@ -3,12 +3,12 @@
 export const DEFAULT_CORRECTION_STRATEGY = {
   schemeCode: 120403,
   fundName: 'Invesco India Mid Cap Fund – Direct Growth',
-  monthlyBudget: 100000,
+  monthlyBudget: 200000,
   initialAllocation: 55,
   levels: [
-    { drawdown: 3, allocation: 20 },
-    { drawdown: 5, allocation: 15 },
-    { drawdown: 7, allocation: 10 },
+    { drawdown: 2, allocation: 20 },
+    { drawdown: 3, allocation: 15 },
+    { drawdown: 5, allocation: 10 },
   ],
   cutoffDay: 15,
 }
@@ -157,6 +157,7 @@ export function recommendationMessage(recommendation, money) {
   const amount = money(recommendation.amountPaise / 100)
   if (recommendation.kind === 'initial') return `Invest ${amount} — initial monthly allocation.`
   if (recommendation.kind === 'cutoff') return `Monthly cutoff reached. Invest remaining ${amount}.`
-  const levels = recommendation.breakdown.map((level) => `${level.drawdown}%`).join(' and ')
+  const names = recommendation.breakdown.map((level) => `${level.drawdown}%`)
+  const levels = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ')
   return `${Number(recommendation.drawdown.toFixed(2))}% correction reached. ${levels} ${recommendation.breakdown.length > 1 ? 'levels' : 'level'} triggered. Invest ${amount}.`
 }
