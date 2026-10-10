@@ -6,7 +6,7 @@
 import { useState, useMemo } from 'react'
 import AllocationDonut from './AllocationDonut.jsx'
 import { EmptyState } from './StateViews.jsx'
-import { monthlyInvestments, mfCapBreakdown, equityBreakdown } from '../lib/monthly.js'
+import { monthlyInvestments, mfCapBreakdown, equityBreakdown, investmentMonthKey } from '../lib/monthly.js'
 import { ASSET_COLORS } from '../config.js'
 import { formatINR, formatINRCompact, formatNumber, formatUSD } from '../lib/format.js'
 import SourceLegend from './SourceLegend.jsx'
@@ -20,9 +20,6 @@ const SERIES = [
   { key: 'equity', label: 'Stocks & ETFs', color: ASSET_COLORS.stock },
   { key: 'us_stock', label: 'US Stocks', color: ASSET_COLORS.us_stock },
 ]
-
-const monthKeyOf = (d) =>
-  d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null
 
 export default function MonthlyTab({ transactions = [], mfTransactions = [], focusMonth = null }) {
   const [activeSource, setActiveSource] = useState(null)
@@ -123,10 +120,10 @@ export default function MonthlyTab({ transactions = [], mfTransactions = [], foc
 
   // Transactions in the selected month for the detail list.
   const detailMf = useMemo(() => {
-    return mfTxns.filter((t) => activeMonth === 'all' || monthKeyOf(t.date) === activeMonth).sort(byDateDesc)
+    return mfTxns.filter((t) => activeMonth === 'all' || investmentMonthKey(t) === activeMonth).sort(byDateDesc)
   }, [mfTxns, activeMonth])
   const detailEq = useMemo(() => {
-    return filteredTransactions.filter((t) => activeMonth === 'all' || monthKeyOf(t.date) === activeMonth).sort(byDateDesc)
+    return filteredTransactions.filter((t) => activeMonth === 'all' || investmentMonthKey(t) === activeMonth).sort(byDateDesc)
   }, [filteredTransactions, activeMonth])
   const fmtDate = (d) =>
     d

@@ -67,6 +67,21 @@ function monthKey(d) {
 // aggregate skips them.
 const isContribution = (t) => t.side === 'BUY' && t.date && !t.opening
 
+// Only the reporting month moves; the original transaction date stays intact.
+function investmentMonthDate(t) {
+  const d = t.date
+  if (!d) return null
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  return isContribution(t) && d.getDate() === lastDay
+    ? new Date(d.getFullYear(), d.getMonth() + 1, 1)
+    : d
+}
+
+export function investmentMonthKey(t) {
+  const d = investmentMonthDate(t)
+  return d ? monthKey(d) : null
+}
+
 // Consolidated monthly invested across MF, Stocks and ETFs (BUY only).
 // MF amounts come from the MF-transactions statement (units*nav); equity from
 // qty*price, classed stock/ETF by ISIN.
@@ -91,7 +106,7 @@ export function monthlyInvestments(equityTxns = [], mfTxns = []) {
 
   for (const t of equityTxns) {
     if (!isContribution(t)) continue
-    const row = ensure(t.date)
+    const row = ensure(investmentMonthDate(t))
     const val = (t.qty || 0) * (t.price || 0)
     row[txnType(t)] += val
     row.total += val
@@ -100,7 +115,7 @@ export function monthlyInvestments(equityTxns = [], mfTxns = []) {
 
   for (const t of mfTxns) {
     if (!isContribution(t)) continue
-    const row = ensure(t.date)
+    const row = ensure(investmentMonthDate(t))
     const val = t.amount || 0
     row.mf += val
     row.total += val
@@ -151,11 +166,12 @@ export function mfCapBreakdown(mfTxns = []) {
     allTotal += amt
     addCap(allCaps, c, amt)
 
-    const key = monthKey(t.date)
+    const d = investmentMonthDate(t)
+    const key = monthKey(d)
     if (!monthsMap.has(key)) {
       monthsMap.set(key, {
         month: key,
-        label: t.date.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
+        label: d.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
         total: 0,
         caps: new Map(),
       })
@@ -200,11 +216,12 @@ export function equityBreakdown(equityTxns = []) {
     allTotal += val
     addScrip(allScrips, t.name, val)
 
-    const key = monthKey(t.date)
+    const d = investmentMonthDate(t)
+    const key = monthKey(d)
     if (!monthsMap.has(key)) {
       monthsMap.set(key, {
         month: key,
-        label: t.date.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
+        label: d.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
         total: 0,
         scrips: new Map(),
       })
