@@ -9,7 +9,7 @@
 // the closest tradeable stand-in for the index itself. Both have daily history
 // back to 2020-21, which outruns the user's transaction sheets.
 import { navOn } from './navs.js'
-import { capOf } from './monthly.js'
+import { capOf, investmentMonthKey } from './monthly.js'
 
 // Scheme codes are pinned deliberately: this series must not change shape
 // because the user bought or sold a fund. Colors are the cap colors the donuts
@@ -47,10 +47,10 @@ export function marketVsBuys(navMap, mfTxns = [], { months = 24, now = new Date(
 
   const buys = new Map()
   for (const t of mfTxns) {
-    if (!isBuy(t)) continue
+    if (!isBuy(t) || t.date > now) continue
     const cap = capOf(t.name).key
     if (!segs.some((s) => s.key === cap)) continue
-    const k = monthKey(t.date)
+    const k = investmentMonthKey(t)
     if (!buys.has(k)) buys.set(k, {})
     const row = buys.get(k)
     row[cap] = (row[cap] || 0) + (t.amount || 0)

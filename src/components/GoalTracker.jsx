@@ -448,9 +448,8 @@ function PaceChart({ months, avg, market = null, split = null, segments = [] }) 
           // Mid/small sit at the foot of the bar, the rest of the month's money
           // above them: the bar keeps its true total height (so the average line
           // still means what it did) while showing how much went to these two.
-          // The stack is clamped to the bar it sits in: goal.js's `added` and the
-          // MF transaction sum are computed independently, and a disagreement
-          // must show as a full bar, never as a segment poking out the top.
+          // Both totals and cap slices use the Monthly tab's reporting month.
+          // Clamp each slice to the remaining bar height for rounding differences.
           let acc = 0
           const stack = []
           for (const s of segments) {

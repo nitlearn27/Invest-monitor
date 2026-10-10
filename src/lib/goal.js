@@ -23,6 +23,7 @@
 // while every month-over-month change still comes from a real transaction.
 import { schemeFor } from './navs.js'
 import { DERIVED_MF_SOURCES, DERIVED_EQUITY_SOURCES } from './derive.js'
+import { monthlyInvestments } from './monthly.js'
 
 // Sources whose holdings are derived from their own transactions, so a holding
 // and its timeline position are guaranteed to key alike.
@@ -333,8 +334,14 @@ export function goalProgress({
   const currentValue = value[n - 1]
   const gain = currentValue - currentInvested
 
-  // Month rows: what went in (contributions, from transactions only) and what
-  // the corpus was worth at the end of the month.
+  // Contribution reporting follows the Monthly tab, including its rule that
+  // last-day purchases belong to the next month. Keep the actual cost movement
+  // separate: valuations and market returns still use real transaction dates
+  // and running-average sell accounting.
+  const contributions = new Map(monthlyInvestments(
+    transactions.filter((t) => t.date && t.date.getTime() <= tNow),
+    mfTransactions.filter((t) => t.date && t.date.getTime() <= tNow),
+  ).map((m) => [m.month, m.total]))
   const months = []
   let cursor = 0
   for (const d = monthStart(t0); d.getTime() <= tNow; d.setMonth(d.getMonth() + 1)) {
@@ -345,7 +352,8 @@ export function goalProgress({
     months.push({
       month: monthKey(d),
       label: monthLabel(d),
-      added: invested[endIdx] - (before >= 0 ? invested[before] : baseCost),
+      added: contributions.get(monthKey(d)) || 0,
+      netAdded: invested[endIdx] - (before >= 0 ? invested[before] : baseCost),
       end: invested[endIdx],
       valueEnd: valueFrom != null && endIdx >= valueFrom ? value[endIdx] : null,
     })
@@ -363,8 +371,8 @@ export function goalProgress({
       ? {
           from: lastMonth.valueEnd,
           total: currentValue - lastMonth.valueEnd,
-          added: thisMonth.added,
-          market: currentValue - lastMonth.valueEnd - thisMonth.added,
+          added: thisMonth.netAdded,
+          market: currentValue - lastMonth.valueEnd - thisMonth.netAdded,
         }
       : null
 
